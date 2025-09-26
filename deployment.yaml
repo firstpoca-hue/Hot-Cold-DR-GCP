@@ -1,0 +1,55 @@
+resources:
+  # Terraform state bucket
+  - name: tfstate-bucket
+    type: gcp-types/storage-v1:buckets
+    properties:
+      project: Hot-Cold-Drp
+      name: hot-cold-drb
+      location: asia-south1
+      storageClass: STANDARD
+      labels:
+        purpose: tfstate
+        owner: platform
+      versioning:
+        enabled: true
+      iamConfiguration:
+        uniformBucketLevelAccess:
+          enabled: true
+        publicAccessPrevention: enforced
+      lifecycle:
+        rule:
+          - action:
+              type: SetStorageClass
+              storageClass: NEARLINE
+            condition:
+              age: 90
+          - action:
+              type: Delete
+            condition:
+              numNewerVersions: 50
+      # Optional: use CMEK for default encryption (requires existing key)
+      # encryption:
+      #   defaultKmsKeyName: projects/YOUR_PROJECT/locations/asia-south1/keyRings/kr-tfstate/cryptoKeys/key-tfstate
+
+  # Optional: dedicated Terraform service account
+  - name: tf-automation-sa
+    type: iam.v1.serviceAccount
+    properties:
+      accountId: tf-automation
+      displayName: "Terraform Automation"
+
+  # Grant the SA permission to manage state objects in the bucket
+  - name: tfstate-object-admin
+    type: gcp-types/storage-v1:virtual.buckets.iamMemberBinding
+    properties:
+      bucket: $(ref.tfstate-bucket.name)
+      role: roles/storage.objectAdmin
+      member: serviceAccount:$(ref.tf-automation-sa.email)
+
+  # (Optional) allow listing bucket (typically covered, but explicit viewer can be added)
+  # - name: tfstate-object-viewer
+  #   type: gcp-types/storage-v1:virtual.buckets.iamMemberBinding
+  #   properties:
+  #     bucket: $(ref.tfstate-bucket.name)
+  #     role: roles/storage.objectViewer
+  #     member: serviceAccount:$(ref.tf-automation-sa.email)
