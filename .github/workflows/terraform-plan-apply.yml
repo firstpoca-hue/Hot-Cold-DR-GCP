@@ -80,7 +80,7 @@ jobs:
 
   apply:
     needs: plan
-    if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.plan.outputs.has_changes == 'true' }}
+    # if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.plan.outputs.has_changes == 'true' }}
     runs-on: ubuntu-latest
     environment: prod   # requires manual approval in repo settings
     concurrency:
