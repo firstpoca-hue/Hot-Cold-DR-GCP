@@ -60,11 +60,9 @@ variable "private_cluster" {
 variable "disk_type" {
   type        = string
   description = "Boot disk type for node pool (pd-standard|pd-balanced|pd-ssd)"
-  default     = "pd-balanced"
 }
 
 variable "disk_size_gb" {
   type        = number
   description = "Boot disk size for node pool"
-  default     = 50
 }

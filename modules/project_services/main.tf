@@ -23,6 +23,7 @@ resource "google_project_service" "core" {
   service  = each.key
 
   # key safety: never try to disable on destroy
+  disable_dependent_services = true
   disable_on_destroy = false
 
   timeouts { 
@@ -36,7 +37,7 @@ resource "google_project_service" "others" {
   for_each = toset(local.other_apis)
   project  = var.project_id
   service  = each.key
-
+  disable_dependent_services = true
   disable_on_destroy = false
   depends_on         = [google_project_service.core]
 
@@ -50,6 +51,7 @@ resource "google_project_service" "others" {
 resource "google_project_service" "logging" {
   project            = var.project_id
   service            = "logging.googleapis.com"
+  disable_dependent_services = true
   disable_on_destroy = false
   lifecycle { prevent_destroy = true }
 }
