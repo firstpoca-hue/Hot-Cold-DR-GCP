@@ -67,7 +67,7 @@ jobs:
   apply:
     needs: plan
     # ⬇️ Apply only if it's a push to main AND plan had changes
-    if: ${{ needs.plan.outputs.has_changes == 'true' }}
+    if: ${{ needs.plan.outputs.has_changes == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     environment: prod
     defaults:
