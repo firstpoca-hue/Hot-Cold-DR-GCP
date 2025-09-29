@@ -21,7 +21,7 @@ jobs:
   destroy:
     name: Terraform Destroy (requires approval)
     runs-on: ubuntu-latest
-    # Protected Environment for manual approval
+    # Manual approval gate via Environment protection
     environment: prod
     concurrency:
       group: tf-prod
@@ -33,6 +33,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ✅ Authenticate to Google Cloud first
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
@@ -41,7 +42,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # Ensure the state bucket exists (idempotent; safe even if already created)
+      # Ensure backend bucket exists (no-op if already there)
       - name: Ensure GCS backend bucket exists
         run: |
           BUCKET="${{ secrets.TF_BACKEND_BUCKET }}"
@@ -60,7 +61,7 @@ jobs:
       - name: Terraform Init (reconfigure)
         run: terraform init -reconfigure -backend-config=backend.hcl
 
-      # Safety confirmation based on tfvars project_id
+      # Safety guard: require user to confirm the target project_id
       - name: Read project_id from tfvars
         id: read
         run: |
