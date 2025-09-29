@@ -1,8 +1,8 @@
 # modules/project_services/main.tf
 
 locals {
+  # Must be enabled first so other API operations succeed
   core_apis = [
-    # must come first
     "cloudresourcemanager.googleapis.com",
     "serviceusage.googleapis.com",
   ]
@@ -15,7 +15,7 @@ locals {
     "monitoring.googleapis.com",
     "logging.googleapis.com",
     "dns.googleapis.com",
-    "artifactregistry.googleapis.com"
+    "artifactregistry.googleapis.com",
   ]
 }
 
@@ -26,7 +26,9 @@ resource "google_project_service" "core" {
   project = var.project_id
   service = each.key
 
+  # Do NOT cascade-disable anything and do NOT disable on destroy
   disable_dependent_services = false
+  disable_on_destroy         = false
 
   timeouts {
     create = "20m"
@@ -41,7 +43,9 @@ resource "google_project_service" "others" {
   project = var.project_id
   service = each.key
 
+  # Do NOT cascade-disable anything and do NOT disable on destroy
   disable_dependent_services = false
+  disable_on_destroy         = false
 
   # ensure core is fully on before proceeding
   depends_on = [google_project_service.core]
