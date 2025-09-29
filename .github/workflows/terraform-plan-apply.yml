@@ -1,8 +1,14 @@
 name: Terraform Plan & Apply (GCS backend)
 
 on:
-  workflow_dispatch:
-    
+   workflow_dispatch:
+     
+  # push:
+  #   branches:
+  #     - main
+  # pull_request:
+  #   branches:
+  #     - main
 
 permissions:
   contents: read
@@ -20,6 +26,8 @@ jobs:
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIR }}
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,23 +40,31 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # If your backend is declared in terraform { backend "gcs" {} } with fixed bucket/prefix,
-      # this init is enough. If you want to keep bucket name secret, write backend.hcl and pass it.
       - name: Terraform Init (GCS backend)
         run: terraform init -reconfigure
 
       - name: Terraform Validate
         run: terraform validate
 
-      - name: Terraform Plan
+      - name: Terraform Plan (fail fast, capture exit code)
         id: plan
         run: |
+          set -o pipefail
           terraform plan \
             -var-file="${{ env.TFVARS_PATH }}" \
-            -input=false -no-color \
-            -out=tfplan.bin | tee plan.txt
+            -input=false -no-color -out=tfplan.bin -detailed-exitcode | tee plan.txt
+          code=$?
+          if [ $code -eq 0 ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          elif [ $code -eq 2 ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "Plan failed. See plan.txt above."
+            exit $code
+          fi
 
-      - name: Upload Plan Artifact
+      - name: Upload Plan Artifact (only if changes)
+        if: ${{ steps.plan.outputs.has_changes == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: tfplan
@@ -64,9 +80,9 @@ jobs:
 
   apply:
     needs: plan
-    # if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.plan.outputs.has_changes == 'true' }}
     runs-on: ubuntu-latest
-    environment: prod  # add Required reviewers for manual approval
+    environment: prod   # requires manual approval in repo settings
     concurrency:
       group: tf-prod
       cancel-in-progress: false
@@ -94,5 +110,5 @@ jobs:
       - name: Terraform Init (reconfigure)
         run: terraform init -reconfigure
 
-      - name: Terraform Apply
+      - name: Terraform Apply (only valid, complete plan)
         run: terraform apply -input=false -auto-approve tfplan.bin
