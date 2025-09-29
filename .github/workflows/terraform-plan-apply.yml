@@ -1,4 +1,4 @@
-name: Terraform Plan & Apply (GCS backend)
+name: Terraform Plan & Apply
 
 on:
    workflow_dispatch:
@@ -37,6 +37,19 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      - name: Read project_id from tfvars
+        id: proj
+        run: |
+          PROJECT_ID=$(grep -E '^\s*project_id\s*=' "${{ env.TFVARS_PATH }}" | sed -E 's/.*=\s*"([^"]+)".*/\1/')
+          echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
+
+      - name: Enable core Google APIs
+        run: |
+          gcloud services enable \
+            cloudresourcemanager.googleapis.com \
+            serviceusage.googleapis.com \
+            --project "${{ steps.proj.outputs.project_id }}"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
@@ -46,7 +59,7 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
-      - name: Terraform Plan (fail fast, capture exit code)
+      - name: Terraform Plan (fail fast; detect changes)
         id: plan
         run: |
           set -o pipefail
@@ -72,17 +85,17 @@ jobs:
             ${{ env.WORKING_DIR }}/tfplan.bin
             ${{ env.WORKING_DIR }}/plan.txt
 
-      # - name: Comment Plan on PR (if PR)
-      #   if: ${{ github.event_name == 'pull_request' }}
-      #   uses: thollander/actions-comment-pull-request@v2
-      #   with:
-      #     filePath: ${{ env.WORKING_DIR }}/plan.txt
+      - name: Comment Plan on PR (if PR)
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          filePath: ${{ env.WORKING_DIR }}/plan.txt
 
   apply:
     needs: plan
     # if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.plan.outputs.has_changes == 'true' }}
     runs-on: ubuntu-latest
-    environment: prod   # requires manual approval in repo settings
+    environment: prod
     concurrency:
       group: tf-prod
       cancel-in-progress: false
@@ -110,5 +123,6 @@ jobs:
       - name: Terraform Init (reconfigure)
         run: terraform init -reconfigure
 
-      - name: Terraform Apply (only valid, complete plan)
+      - name: Terraform Apply
         run: terraform apply -input=false -auto-approve tfplan.bin
+
