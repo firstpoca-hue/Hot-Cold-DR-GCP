@@ -1,14 +1,19 @@
-name: Terraform Plan & Apply
+name: Terraform Plan & Apply (manual-friendly)
 
 on:
-   workflow_dispatch:
-     
-  # push:
-  #   branches:
-  #     - main
-  # pull_request:
-  #   branches:
-  #     - main
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      force_apply:
+        description: "Force apply even if plan artifact is missing or no changes detected"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -30,13 +35,32 @@ jobs:
       has_changes: ${{ steps.plan.outputs.has_changes }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Read project_id from tfvars
+        id: proj
+        run: |
+          PROJECT_ID=$(grep -E '^\s*project_id\s*=' "${{ env.TFVARS_PATH }}" | sed -E 's/.*=\s*"([^"]+)".*/\1/')
+          echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
+
+      - name: Enable core Google APIs
+        run: |
+          gcloud services enable \
+            cloudresourcemanager.googleapis.com \
+            serviceusage.googleapis.com \
+            --project "${{ steps.proj.outputs.project_id }}"
+
       - uses: hashicorp/setup-terraform@v3
-      - run: terraform init -reconfigure
-      - run: terraform validate
+
+      - name: Terraform Init (GCS backend)
+        run: terraform init -reconfigure
+
+      - name: Terraform Validate
+        run: terraform validate
 
       - name: Terraform Plan (fail fast; detect changes)
         id: plan
@@ -64,23 +88,35 @@ jobs:
             ${{ env.WORKING_DIR }}/tfplan.bin
             ${{ env.WORKING_DIR }}/plan.txt
 
+      - name: Comment Plan on PR (if PR)
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          filePath: ${{ env.WORKING_DIR }}/plan.txt
+
   apply:
     needs: plan
-    # ⬇️ Apply only if it's a push to main AND plan had changes
-    if: ${{ needs.plan.outputs.has_changes == 'workflow_dispatch' }}
+    # You can run this manually via "Run workflow" and set force_apply=true.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push' && (needs.plan.outputs.has_changes == 'true' || inputs.force_apply == true)) }}
     runs-on: ubuntu-latest
-    environment: prod
+    environment: prod   # manual approval gate via Environment protection
+    concurrency:
+      group: tf-prod
+      cancel-in-progress: false
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Plan Artifact
+      # Best-effort download of the plan, do not fail if missing (manual runs)
+      - name: Download Plan Artifact (best-effort)
+        id: dl
         uses: actions/download-artifact@v4
         with:
-          name: tfplan           # ⬅️ no repository/run-id
+          name: tfplan
           path: ${{ env.WORKING_DIR }}
+        continue-on-error: true
 
       - name: Google Auth
         uses: google-github-actions/auth@v2
@@ -88,7 +124,18 @@ jobs:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - uses: hashicorp/setup-terraform@v3
-      - run: terraform init -reconfigure
-      - run: terraform apply -input=false -auto-approve tfplan.bin
 
+      - name: Terraform Init (reconfigure)
+        run: terraform init -reconfigure
 
+      # If tfplan.bin wasn't downloaded, or you forced apply, create a plan now
+      - name: Recreate plan if missing or forced
+        if: ${{ steps.dl.outcome == 'failure' || inputs.force_apply == true }}
+        run: |
+          echo "Recreating plan (artifact missing or force_apply=true)"
+          terraform plan \
+            -var-file="${{ env.TFVARS_PATH }}" \
+            -input=false -no-color -out=tfplan.bin
+
+      - name: Terraform Apply
+        run: terraform apply -input=false -auto-approve tfplan.bin
