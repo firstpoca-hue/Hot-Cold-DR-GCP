@@ -64,7 +64,7 @@ jobs:
 
   apply:
     needs: plan
-    if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+    # if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
     runs-on: ubuntu-latest
     environment: prod  # add Required reviewers for manual approval
     concurrency:
