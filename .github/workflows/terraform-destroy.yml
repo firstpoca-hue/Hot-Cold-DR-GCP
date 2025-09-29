@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type EXACT project_id (as in env/dev/terraform.tfvars) to confirm destroy'
+        description: 'hot-cold-drp'
         required: true
         type: string
 
@@ -19,10 +19,8 @@ env:
 
 jobs:
   destroy:
-    name: Terraform Destroy (requires approval)
     runs-on: ubuntu-latest
-    # Manual approval gate via Environment protection
-    environment: prod
+    environment: prod  # manual approval gate
     concurrency:
       group: tf-prod
       cancel-in-progress: false
@@ -33,7 +31,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ✅ Authenticate to Google Cloud first
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
@@ -42,26 +39,9 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # Ensure backend bucket exists (no-op if already there)
-      - name: Ensure GCS backend bucket exists
-        run: |
-          BUCKET="${{ secrets.TF_BACKEND_BUCKET }}"
-          LOCATION="ASIA-SOUTH1"
-          if ! gsutil ls -b "gs://$BUCKET" >/dev/null 2>&1; then
-            gcloud storage buckets create "gs://$BUCKET" --location="$LOCATION" --uniform-bucket-level-access
-          fi
-
-      - name: Write backend.hcl
-        run: |
-          cat > backend.hcl <<EOF
-          bucket = "${{ secrets.TF_BACKEND_BUCKET }}"
-          prefix = "gke-modular/state"
-          EOF
-
       - name: Terraform Init (reconfigure)
-        run: terraform init -reconfigure -backend-config=backend.hcl
+        run: terraform init -reconfigure
 
-      # Safety guard: require user to confirm the target project_id
       - name: Read project_id from tfvars
         id: read
         run: |
