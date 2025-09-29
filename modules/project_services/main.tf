@@ -22,7 +22,7 @@ resource "google_project_service" "core" {
   project  = var.project_id
   service  = each.key
 
-  disable_dependent_services = false
+  disable_dependent_services = true
   disable_on_destroy         = false
 
   timeouts { 
@@ -37,7 +37,7 @@ resource "google_project_service" "others" {
   project  = var.project_id
   service  = each.key
 
-  disable_dependent_services = false
+  disable_dependent_services = true
   disable_on_destroy         = false
   depends_on                 = [google_project_service.core]
 
