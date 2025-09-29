@@ -56,3 +56,13 @@ type = bool
 variable "private_cluster" {
  type = bool 
 }
+
+variable "disk_type" {
+type = string
+  
+}
+
+variable "disk_size_gb" {
+ type = number
+  
+}

@@ -1,16 +1,15 @@
 # modules/project_services/main.tf
 
 locals {
-  # Must be enabled first so other API operations succeed
+  # Core platform APIs you want enabled first (no disables)
   core_apis = [
-    "cloudresourcemanager.googleapis.com",
-    "serviceusage.googleapis.com",
+    "iam.googleapis.com",
+    "compute.googleapis.com",
+    "container.googleapis.com",
   ]
 
+  # Everything else (NO duplicates from core_apis)
   other_apis = [
-    "container.googleapis.com",
-    "compute.googleapis.com",
-    "iam.googleapis.com",
     "servicenetworking.googleapis.com",
     "dns.googleapis.com",
     "artifactregistry.googleapis.com",
@@ -24,7 +23,6 @@ resource "google_project_service" "core" {
   project = var.project_id
   service = each.key
 
-  # Do NOT cascade-disable anything and do NOT disable on destroy
   disable_dependent_services = false
   disable_on_destroy         = false
 
@@ -41,12 +39,9 @@ resource "google_project_service" "others" {
   project = var.project_id
   service = each.key
 
-  # Do NOT cascade-disable anything and do NOT disable on destroy
-  
   disable_dependent_services = false
   disable_on_destroy         = false
 
-  # ensure core is fully on before proceeding
   depends_on = [google_project_service.core]
 
   timeouts {
@@ -55,12 +50,18 @@ resource "google_project_service" "others" {
   }
 }
 
+# 3) Baseline services: keep them enabled, never destroy/disable
+#    (Alternatively: completely omit these resources and just leave them enabled outside TF.)
 resource "google_project_service" "logging" {
-  project                    = var.project_id
-  service                    = "logging.googleapis.com"
-  disable_on_destroy         = false
-  # safety belt—prevents attempts to destroy
-  lifecycle {
-    prevent_destroy = true
-  }
+  project            = var.project_id
+  service            = "logging.googleapis.com"
+  disable_on_destroy = false
+  lifecycle { prevent_destroy = true }
+}
+
+resource "google_project_service" "monitoring" {
+  project            = var.project_id
+  service            = "monitoring.googleapis.com"
+  disable_on_destroy = false
+  lifecycle { prevent_destroy = true }
 }

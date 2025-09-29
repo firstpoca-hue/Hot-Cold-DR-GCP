@@ -10,6 +10,8 @@ release_channel = "REGULAR"
 node_machine_type = "e2-standard-4"
 node_min_count = 1
 node_max_count = 3
+disk_type = "pd-balanced"
+ disk_size_gb = 50
 
 
 # Optional features
