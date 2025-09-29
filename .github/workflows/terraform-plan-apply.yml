@@ -1,12 +1,12 @@
 name: Terraform Plan & Apply (manual-friendly)
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  # push:
+  #   branches:
+  #     - main
+  # pull_request:
+  #   branches:
+  #     - main
   workflow_dispatch:
     inputs:
       force_apply:
@@ -88,11 +88,11 @@ jobs:
             ${{ env.WORKING_DIR }}/tfplan.bin
             ${{ env.WORKING_DIR }}/plan.txt
 
-      - name: Comment Plan on PR (if PR)
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: thollander/actions-comment-pull-request@v2
-        with:
-          filePath: ${{ env.WORKING_DIR }}/plan.txt
+      # - name: Comment Plan on PR (if PR)
+      #   if: ${{ github.event_name == 'pull_request' }}
+      #   uses: thollander/actions-comment-pull-request@v2
+      #   with:
+      #     filePath: ${{ env.WORKING_DIR }}/plan.txt
 
   apply:
     needs: plan
