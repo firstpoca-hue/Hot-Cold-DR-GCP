@@ -1,20 +1,20 @@
 # modules/project_services/main.tf
 
 locals {
-  # Enable these first
   core_apis = [
     "iam.googleapis.com",
     "compute.googleapis.com",
     "container.googleapis.com",
+    "cloudresourcemanager.googleapis.com"  
   ]
 
-  # Then these (no duplicates from core_apis)
   other_apis = [
     "servicenetworking.googleapis.com",
     "dns.googleapis.com",
     "artifactregistry.googleapis.com",
   ]
 }
+
 
 # 1) Core APIs
 resource "google_project_service" "core" {
