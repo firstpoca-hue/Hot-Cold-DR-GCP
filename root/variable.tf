@@ -77,7 +77,7 @@ variable "private_cluster" {
 
 variable "disk_type" {
   type    = string
-  default = "pd-balanced" # or "pd-ssd"
+  default = "pd-standard" # or "pd-ssd"
 }
 
 variable "disk_size_gb" {
