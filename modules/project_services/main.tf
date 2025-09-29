@@ -12,7 +12,6 @@ locals {
     "compute.googleapis.com",
     "iam.googleapis.com",
     "servicenetworking.googleapis.com",
-    "monitoring.googleapis.com",
     "dns.googleapis.com",
     "artifactregistry.googleapis.com",
   ]
