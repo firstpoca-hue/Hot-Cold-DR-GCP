@@ -14,9 +14,8 @@ locals {
     "servicenetworking.googleapis.com",
     "monitoring.googleapis.com",
     "logging.googleapis.com",
-    # optional:
-    # "dns.googleapis.com",
-    # "artifactregistry.googleapis.com",
+    "dns.googleapis.com",
+    "artifactregistry.googleapis.com"
   ]
 }
 
