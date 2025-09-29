@@ -13,7 +13,6 @@ locals {
     "iam.googleapis.com",
     "servicenetworking.googleapis.com",
     "monitoring.googleapis.com",
-    "logging.googleapis.com",
     "dns.googleapis.com",
     "artifactregistry.googleapis.com",
   ]
@@ -44,6 +43,7 @@ resource "google_project_service" "others" {
   service = each.key
 
   # Do NOT cascade-disable anything and do NOT disable on destroy
+  
   disable_dependent_services = false
   disable_on_destroy         = false
 
@@ -53,5 +53,15 @@ resource "google_project_service" "others" {
   timeouts {
     create = "20m"
     update = "20m"
+  }
+}
+
+resource "google_project_service" "logging" {
+  project                    = var.project_id
+  service                    = "logging.googleapis.com"
+  disable_on_destroy         = false
+  # safety belt—prevents attempts to destroy
+  lifecycle {
+    prevent_destroy = true
   }
 }
