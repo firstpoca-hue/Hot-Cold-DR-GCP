@@ -24,7 +24,7 @@ module "gke" {
   network_self_link             = module.network.network_self_link
   subnet_self_link              = module.network.subnet_self_link
   node_machine_type             = var.node_machine_type
-  disk_type                     =  var.disk_type
+  disk_type                     = var.disk_type
   disk_size_gb                  = var.disk_size_gb
   node_min_count                = var.node_min_count
   node_max_count                = var.node_max_count

@@ -1,5 +1,5 @@
 project_id = "hot-cold-drp"
-region = "asia-south1" # Mumbai
+region = "us-central1" # Mumbai
 network_name = "gke-vpc"
 subnet_name = "gke-subnet"
 subnet_cidr = "10.10.0.0/16"
@@ -9,9 +9,9 @@ cluster_name = "demo-gke"
 release_channel = "REGULAR"
 node_machine_type = "e2-standard-4"
 node_min_count = 1
-node_max_count = 2
-disk_type = "pd-standard"
-disk_size_gb = 80
+node_max_count = 1
+disk_type     = "pd-ssd"
+disk_size_gb  = 100
 
 
 # Optional features
