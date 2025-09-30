@@ -77,10 +77,10 @@ variable "private_cluster" {
 
 variable "disk_type" {
   type    = string
-  default = "pd-standard" # or "pd-ssd"
+  default = "pd-ssd" # or "pd-ssd"
 }
 
 variable "disk_size_gb" {
   type    = number
-  default = 80
+  default = 100
 }

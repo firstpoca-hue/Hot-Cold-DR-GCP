@@ -10,9 +10,8 @@ release_channel = "REGULAR"
 node_machine_type = "e2-standard-4"
 node_min_count = 1
 node_max_count = 2
-disk_type = "pd-standard"
-disk_size_gb = 80
-
+disk_type    = "pd-ssd"  # was pd-ssd
+disk_size_gb = 100 
 
 # Optional features
 enable_network_policy = false

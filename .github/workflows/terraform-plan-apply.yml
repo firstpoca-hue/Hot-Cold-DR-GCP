@@ -97,7 +97,7 @@ jobs:
   apply:
     needs: plan
     # You can run this manually via "Run workflow" and set force_apply=true.
-    # if: ${{ github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push' && (needs.plan.outputs.has_changes == 'true' || inputs.force_apply == true)) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push' && (needs.plan.outputs.has_changes == 'true' || inputs.force_apply == true)) }}
     runs-on: ubuntu-latest
     environment: prod   # manual approval gate via Environment protection
     concurrency:
