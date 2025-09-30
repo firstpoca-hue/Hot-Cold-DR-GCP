@@ -82,5 +82,5 @@ variable "disk_type" {
 
 variable "disk_size_gb" {
   type    = number
-  default = 50
+  default = 80
 }
