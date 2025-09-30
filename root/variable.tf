@@ -55,7 +55,7 @@ variable "node_min_count" {
 
 variable "node_max_count" {
   type    = number
-  default = 3
+  default = 2
 }
 
 
@@ -77,10 +77,11 @@ variable "private_cluster" {
 
 variable "disk_type" {
   type    = string
-  default = "pd-ssd" # or "pd-ssd"
+  default  = "pd-ssd"
+
 }
 
 variable "disk_size_gb" {
   type    = number
-  default = 100
+  default  = 100
 }
