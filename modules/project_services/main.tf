@@ -1,17 +1,17 @@
-locals {
-  core_apis = [
-    "iam.googleapis.com",
-    "compute.googleapis.com",
-    "container.googleapis.com",
-    "cloudresourcemanager.googleapis.com"
-  ]
+# locals {
+#   core_apis = [
+#     "iam.googleapis.com",
+#     "compute.googleapis.com",
+#     "container.googleapis.com",
+#     "cloudresourcemanager.googleapis.com"
+#   ]
 
-  other_apis = [
-    "servicenetworking.googleapis.com",
-    "dns.googleapis.com",
-    "artifactregistry.googleapis.com"
-  ]
-}
+#   other_apis = [
+#     "servicenetworking.googleapis.com",
+#     "dns.googleapis.com",
+#     "artifactregistry.googleapis.com"
+#   ]
+# }
 
 resource "google_project_service" "services" {
   for_each = toset([
@@ -20,10 +20,15 @@ resource "google_project_service" "services" {
     "compute.googleapis.com",
     "iam.googleapis.com",
     "cloudresourcemanager.googleapis.com",
-
-    # ✅ Other required services
+    "iam.googleapis.com",
+    "compute.googleapis.com",
+    "container.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
     "servicenetworking.googleapis.com",
-    "monitoring.googleapis.com",
+    "dns.googleapis.com",
+    "artifactregistry.googleapis.com"
+
+    # ✅ Other required service
 
     # ❌ EXCLUDED: "logging.googleapis.com"
     # ❌ DO NOT disable: "serviceusage.googleapis.com" (essential for project operations)
