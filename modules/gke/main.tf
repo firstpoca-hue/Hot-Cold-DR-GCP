@@ -59,11 +59,11 @@ resource "google_container_node_pool" "primary_nodes" {
   name       = "primary-nodes"
   location   = var.region
   cluster    = google_container_cluster.primary_nodes.name   # updated reference
-  node_count = 2
+  node_count = 1
 
   node_config {
-    machine_type = "e2-medium"
-    disk_size_gb = 50
+    machine_type = "e2-small"
+    disk_size_gb = 30
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform",
     ]
