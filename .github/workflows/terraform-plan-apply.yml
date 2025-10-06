@@ -47,12 +47,12 @@ jobs:
           PROJECT_ID=$(grep -E '^\s*project_id\s*=' "${{ env.TFVARS_PATH }}" | sed -E 's/.*=\s*"([^"]+)".*/\1/')
           echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
 
-      # - name: Enable core Google APIs
-      #   run: |
-      #     gcloud services enable \
-      #       cloudresourcemanager.googleapis.com \
-      #       serviceusage.googleapis.com \
-      #       --project "${{ steps.proj.outputs.project_id }}"
+      - name: Enable core Google APIs
+        run: |
+          gcloud services enable \
+            cloudresourcemanager.googleapis.com \
+            serviceusage.googleapis.com \
+            --project "${{ steps.proj.outputs.project_id }}"
 
       - uses: hashicorp/setup-terraform@v3
 
