@@ -1,68 +1,77 @@
-variable "project_id" { 
-type = string 
+variable "project_id" {
+  description = "GCP project id"
+  type        = string
 }
 
-variable "region" { 
-type = string 
+variable "region" {
+  description = "GCP region where the cluster will be created"
+  type        = string
 }
 
-variable "cluster_name"{ 
-type = string 
+variable "cluster_name" {
+  description = "Name of the GKE cluster"
+  type        = string
 }
 
-variable "release_channel" { 
-type = string 
+variable "network" {
+  description = "VPC network name (self link or name)"
+  type        = string
 }
 
-
-variable "network_self_link" { 
-type = string 
+variable "subnetwork" {
+  description = "Subnetwork name"
+  type        = string
 }
 
-variable "subnet_self_link" {
-type = string 
+variable "initial_node_count" {
+  description = "Initial node count for node pool"
+  type        = number
+  default     = 1
 }
 
-
-variable "cluster_secondary_range_name" { 
-type = string
+variable "min_nodes" {
+  description = "Minimum nodes for autoscaling"
+  type        = number
+  default     = 1
 }
 
-variable "services_secondary_range_name" { 
-type = string
+variable "max_nodes" {
+  description = "Maximum nodes for autoscaling"
+  type        = number
+  default     = 3
 }
 
 variable "node_machine_type" {
- type = string 
-}
-
-variable "node_min_count" {
-type = number 
-}
-
-variable "node_max_count" { 
-type = number 
-}
-
-
-variable "enable_network_policy" { 
-type = bool 
-}
-
-variable "enable_dataplane_v2" { 
-type = bool 
-}
-
-variable "private_cluster" {
- type = bool 
-}
-
-variable "disk_type" {
+  description = "Machine type for nodes"
   type        = string
-  description = "Boot disk type for node pool (pd-standard|pd-balanced|pd-ssd)"
+  default     = "e2-standard-4"
+}
+
+variable "enable_private_cluster" {
+  description = "Whether to create private nodes"
+  type        = bool
+  default     = true
+}
+
+variable "service_account_email" {
+  description = "Optional GCE service account for node VMs (prefer a least-priv SA)"
+  type        = string
+  default     = null
+}
+
+variable "workload_identity_pool" {
+  description = "Optional workload identity pool in the form PROJECT.svc.id.goog (e.g. my-project.svc.id.goog)"
+  type        = string
+  default     = null
+}
+
+variable "enable_autoprovisioning" {
+  description = "Enable Node Autoprovisioning for cluster"
+  type        = bool
+  default     = false
 }
 
 variable "disk_size_gb" {
-  type        = number
-  description = "Boot disk size for node pool"
+  type    = number
+  default = 50
 }

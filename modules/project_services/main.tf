@@ -1,34 +1,29 @@
-locals {
-  core_apis = [
-    "iam.googleapis.com",
+resource "google_project_service" "services" {
+  for_each = toset([
     "compute.googleapis.com",
     "container.googleapis.com",
-    "cloudresourcemanager.googleapis.com"
-  ]
-
-  other_apis = [
-    "servicenetworking.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
+    "iam.googleapis.com",
     "dns.googleapis.com",
-    "artifactregistry.googleapis.com"
-  ]
+  ])
+  project = var.project_id
+  service = each.value
+  disable_on_destroy = false
 }
 
-resource "google_project_service" "apis" {
-  for_each = toset([
-    "iam.googleapis.com",
-    "compute.googleapis.com",
-    "container.googleapis.com",
-    "cloudresourcemanager.googleapis.com",
-    "servicenetworking.googleapis.com",
-    # DO NOT include logging, monitoring, or serviceusage
-  ])
+resource "google_artifact_registry_repository" "docker_repo" {
+  project       = var.project_id
+  location      = var.artifact_registry_location != "" ? var.artifact_registry_location : var.region_a
+  repository_id = "gke-docker-repo"
+  description   = "Multi-region Artifact Registry for container images"
+  format        = "DOCKER"
 
-  project                     = var.project_id
-  service                     = each.key
-  disable_dependent_services = true
-  disable_on_destroy          = false
+  depends_on = [google_project_service.services]
+}
 
-  lifecycle {
-    prevent_destroy = true
-  }
+resource "google_service_account" "gke_nodes" {
+  project      = var.project_id
+  account_id   = "gke-nodes"
+  display_name = "GKE Nodes Service Account"
 }

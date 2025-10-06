@@ -1,27 +1,21 @@
-variable "project_id" { 
-type = string 
+# 
+
+variable "project_id" {
+  type        = string
+  description = "The project ID to deploy the network"
 }
 
-variable "region" {
- type = string 
+variable "network_name" {
+  type        = string
+  default     = "gke-vpc"
 }
 
-variable "network_name" { 
-type = string 
+variable "region_a" {
+  type        = string
+  description = "Primary region"
 }
 
-variable "subnet_name" { 
-type = string 
-}
-
-variable "subnet_cidr" { 
-type = string 
-}
-
-variable "pods_cidr" { 
-type = string 
-}
-
-variable "services_cidr" { 
-type = string 
+variable "subnet_cidr_a" {
+  type        = string
+  default     = "10.10.0.0/20"
 }

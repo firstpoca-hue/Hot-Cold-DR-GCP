@@ -1,15 +1,14 @@
-output "cluster_name" { 
-value = google_container_cluster.cluster.name
+output "artifact_registry_repo" {
+  value = google_artifact_registry_repository.docker_repo.id
 }
 
-output "cluster_region" { 
-value = google_container_cluster.cluster.location 
+output "gke_service_account_email" {
+  value = google_service_account.gke_nodes.email
 }
 
-output "endpoint" { 
-value = google_container_cluster.cluster.endpoint
+output "cluster_name" {
+  value = google_container_cluster.this.name
 }
-
-output "workload_pool" { 
-value = google_container_cluster.cluster.workload_identity_config[0].workload_pool
+output "endpoint" {
+  value = google_container_cluster.this.endpoint
 }

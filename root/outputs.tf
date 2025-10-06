@@ -1,20 +1,18 @@
-output "cluster_name" {
-  value = module.gke.cluster_name
+output "network_name" {
+  value = module.network.network_name
 }
 
-output "cluster_region" {
-  value = module.gke.cluster_region
+output "hot_cluster_name" {
+  value = module.gke_hot.cluster_name
 }
 
-output "endpoint" {
-  value = module.gke.endpoint
+output "hot_cluster_endpoint" {
+  value = module.gke_hot.endpoint
 }
 
-output "workload_pool" {
-  value = module.gke.workload_pool
+output "artifact_repository" {
+  value = module.project_services.artifact_registry_repo
 }
-
-
-output "gcloud_get_creds_cmd" {
-  value = "gcloud container clusters get-credentials ${module.gke.cluster_name} --region ${module.gke.cluster_region} --project ${var.project_id}"
+output "artifact_registry_repo" {
+  value = module.project_services.artifact_registry_repo
 }

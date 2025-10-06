@@ -1,100 +1,72 @@
-resource "google_container_cluster" "cluster" {
-  name     = var.cluster_name
-  location = var.region
-  project  = var.project_id
+# 
 
-  network    = var.network_self_link
-  subnetwork = var.subnet_self_link
+resource "google_project_service" "services" {
+  for_each = toset([
+    "compute.googleapis.com",
+    "container.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
+    "iam.googleapis.com",
+    "dns.googleapis.com",
+  ])
 
-  # Create a temporary default node pool (needed by GKE),
-  # then remove it after cluster creation.
-  remove_default_node_pool = true
-  initial_node_count       = 1
-
-  # ✅ PATCH: make the temporary default node pool use pd-standard (or whatever you pass in)
-  node_config {
-    machine_type = var.node_machine_type
-    disk_type    = var.disk_type        # e.g., "pd-standard"
-    disk_size_gb = var.disk_size_gb     # e.g., 80
-
-    oauth_scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-
-    labels   = { env = "dev" }
-    metadata = { disable-legacy-endpoints = "true" }
-
-    shielded_instance_config {
-      enable_secure_boot = true
-    }
-  }
-  # ✅ END PATCH
-
-  release_channel {
-    channel = var.release_channel
-  }
-
-  ip_allocation_policy {
-    cluster_secondary_range_name  = var.cluster_secondary_range_name
-    services_secondary_range_name = var.services_secondary_range_name
-  }
-
-  workload_identity_config {
-    workload_pool = "${var.project_id}.svc.id.goog"
-  }
-
-  enable_shielded_nodes = true
-
-  # Network Policy only when NOT using Dataplane V2
-  dynamic "network_policy" {
-    for_each = var.enable_network_policy && !var.enable_dataplane_v2 ? [1] : []
-    content {
-      enabled  = true
-      provider = "CALICO"
-    }
-  }
-
-  # Dataplane V2 toggle
-  datapath_provider = var.enable_dataplane_v2 ? "ADVANCED_DATAPATH" : null
-
-  dynamic "private_cluster_config" {
-    for_each = var.private_cluster ? [1] : []
-    content {
-      enable_private_nodes    = true
-      enable_private_endpoint = false
-      master_ipv4_cidr_block  = "172.16.0.0/28"
-    }
-  }
+  project = var.project_id
+  service = each.value
 }
 
-resource "google_container_node_pool" "primary" {
-  name     = "primary-nodes"
-  location = var.region
-  project  = var.project_id
-  cluster  = google_container_cluster.cluster.name
+# Artifact Registry (multi-region)
+resource "google_artifact_registry_repository" "docker_repo" {
+  project      = var.project_id
+  location     = "us" # multi-region US
+  repository_id = "gke-docker-repo"
+  description  = "Multi-region Artifact Registry for container images"
+  format       = "DOCKER"
+
+  depends_on = [google_project_service.services]
+}
+
+# GKE Node Service Account
+resource "google_service_account" "gke_nodes" {
+  project      = var.project_id
+  account_id   = "gke-nodes"
+  display_name = "GKE Nodes Service Account"
+}
+
+resource "google_container_cluster" "this" {
+  name               = var.cluster_name
+  location           = var.region
+  project            = var.project_id
+  initial_node_count = 1  # must be >= 1
+  deletion_protection = false
 
   node_config {
-    machine_type = var.node_machine_type
-    disk_type    = var.disk_type
-    disk_size_gb = var.disk_size_gb
-
-    oauth_scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-
-    labels   = { env = "dev" }
-    metadata = { disable-legacy-endpoints = "true" }
-
-    shielded_instance_config {
-      enable_secure_boot = true
-    }
+    machine_type  = var.node_machine_type
+    disk_size_gb  = var.disk_size_gb
+    oauth_scopes  = ["https://www.googleapis.com/auth/cloud-platform"]
+    service_account = google_service_account.gke_nodes.email
   }
 
-  autoscaling {
-    min_node_count = var.node_min_count
-    max_node_count = var.node_max_count
-  }
+  remove_default_node_pool = true
+}
 
-  management {
-    auto_upgrade = true
-    auto_repair  = true
-  }
+resource "google_project_service" "logging" {
+  service                     = "logging.googleapis.com"
+  disable_on_destroy           = true
+  disable_dependent_services   = true
+  project                     = var.project_id
+}
 
-  depends_on = [google_container_cluster.cluster]
+resource "google_container_node_pool" "primary_nodes" {
+  name       = "primary-nodes"
+  location   = var.region
+  cluster    = google_container_cluster.this.name
+  node_count = 2
+
+  node_config {
+    machine_type = "e2-medium"   # you can change to e2-standard-2 or larger
+    disk_size_gb = 50
+    oauth_scopes = [
+      "https://www.googleapis.com/auth/cloud-platform",
+    ]
+  }
 }

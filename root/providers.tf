@@ -1,10 +1,5 @@
 provider "google" {
-  project = var.project_id
-  region  = var.region
-}
-
-
-provider "google-beta" {
-  project = var.project_id
-  region  = var.region
+  credentials = file("${path.module}/hot-cold-drp-d51a71d63867.json")
+  project     = var.project_id
+  region      = var.region_a
 }

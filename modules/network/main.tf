@@ -1,22 +1,46 @@
+# 
+
 resource "google_compute_network" "vpc" {
-name = var.network_name
-auto_create_subnetworks = false
+  name                    = var.network_name
+  project                 = var.project_id
+  auto_create_subnetworks = false
+}
+
+resource "google_compute_subnetwork" "subnet_a" {
+  name          = "${var.network_name}-subnet-a"
+  project       = var.project_id
+  ip_cidr_range = var.subnet_cidr_a
+  region        = var.region_a
+  network       = google_compute_network.vpc.id
+}
+
+resource "google_compute_firewall" "allow_internal" {
+  name    = "${var.network_name}-allow-internal"
+  project = var.project_id
+  network = google_compute_network.vpc.name
+
+  allow {
+    protocol = "all"
+  }
+
+  source_ranges = ["10.0.0.0/8"]
 }
 
 
-resource "google_compute_subnetwork" "subnet" {
-name = var.subnet_name
-ip_cidr_range = var.subnet_cidr
-region = var.region
-network = google_compute_network.vpc.id
+resource "google_compute_firewall" "allow_external" {
+  name    = "${var.network_name}-allow-external"
+  project = var.project_id
+  network = google_compute_network.vpc.name
 
+  allow {
+    protocol = "tcp"
+    ports    = ["22", "80", "443"]
+  }
 
-secondary_ip_range {
-range_name = "pods"
-ip_cidr_range = var.pods_cidr
+  allow {
+    protocol = "icmp"
+  }
+
+  source_ranges = ["0.0.0.0/0"]
 }
-secondary_ip_range {
-range_name = "services"
-ip_cidr_range = var.services_cidr
-}
-}
+
