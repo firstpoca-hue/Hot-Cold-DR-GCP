@@ -1,12 +1,6 @@
 name: Provision-HOT(primary)-Infra
 
 on:
-  # push:
-  #   branches:
-  #     - main
-  # pull_request:
-  #   branches:
-  #     - main
   workflow_dispatch:
     inputs:
       force_apply:
@@ -62,6 +56,28 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
+      #############################################
+      # 🔍 SECURITY SCANS (Checkov + Trivy)
+      #############################################
+
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Run Checkov on Terraform code
+        run: checkov -d . --quiet --compact
+
+      - name: Run Trivy on IaC (Terraform) for vulnerabilities
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: "fs"
+          ignore-unfixed: true
+          format: "table"
+          exit-code: "1"
+          severity: "HIGH,CRITICAL"
+          scan-ref: "."
+
+      #############################################
+
       - name: Terraform Plan (fail fast; detect changes)
         id: plan
         run: |
@@ -88,18 +104,11 @@ jobs:
             ${{ env.WORKING_DIR }}/tfplan.bin
             ${{ env.WORKING_DIR }}/plan.txt
 
-      # - name: Comment Plan on PR (if PR)
-      #   if: ${{ github.event_name == 'pull_request' }}
-      #   uses: thollander/actions-comment-pull-request@v2
-      #   with:
-      #     filePath: ${{ env.WORKING_DIR }}/plan.txt
-
   apply:
     needs: plan
-    # You can run this manually via "Run workflow" and set force_apply=true.
     if: ${{ github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push' && (needs.plan.outputs.has_changes == 'true' || inputs.force_apply == true)) }}
     runs-on: ubuntu-latest
-    environment: prod   # manual approval gate via Environment protection
+    environment: prod
     concurrency:
       group: tf-prod
       cancel-in-progress: false
@@ -109,7 +118,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Best-effort download of the plan, do not fail if missing (manual runs)
       - name: Download Plan Artifact (best-effort)
         id: dl
         uses: actions/download-artifact@v4
@@ -128,7 +136,6 @@ jobs:
       - name: Terraform Init (reconfigure)
         run: terraform init -reconfigure
 
-      # If tfplan.bin wasn't downloaded, or you forced apply, create a plan now
       - name: Recreate plan if missing or forced
         if: ${{ steps.dl.outcome == 'failure' || inputs.force_apply == true }}
         run: |
