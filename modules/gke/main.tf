@@ -26,29 +26,26 @@ resource "google_artifact_registry_repository" "docker_repo" {
 }
 
 # GKE Node Service Account
-resource "google_service_account" "gke_nodes" {
+resource "google_service_account" "gke_primary" {
   project      = var.project_id
-  account_id   = "gke-nodes"
-  display_name = "GKE Nodes Service Account"
+  account_id   = "gke-primary"      # this is the GCP service account ID (hyphen allowed)
+  display_name = "GKE Primary Service Account"
 }
 
+
 # GKE Cluster
-resource "google_container_cluster" "primary_nodes" {   # renamed to match node pool
-  name               = var.cluster_name
-  location           = var.region
-  project            = var.project_id
-  initial_node_count = 1
-  deletion_protection = false
+resource "google_container_cluster" "primary_nodes" {
+  name     = var.cluster_name
+  location = var.region
 
   node_config {
     machine_type   = var.node_machine_type
     disk_size_gb   = var.disk_size_gb
     oauth_scopes   = ["https://www.googleapis.com/auth/cloud-platform"]
-    service_account = google_service_account.gke_nodes.email
+    service_account = google_service_account.gke_primary.email   # use underscore
   }
-
-  remove_default_node_pool = false
 }
+
 
 resource "google_project_service" "logging" {
   service                     = "logging.googleapis.com"
