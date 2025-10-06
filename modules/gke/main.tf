@@ -32,7 +32,7 @@ resource "google_service_account" "gke_nodes" {
   display_name = "GKE Nodes Service Account"
 }
 
-resource "google_container_cluster" "this" {
+resource "google_container_cluster" "primary_gke" {
   name               = var.cluster_name
   location           = var.region
   project            = var.project_id
