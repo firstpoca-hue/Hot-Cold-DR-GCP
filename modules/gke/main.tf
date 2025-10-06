@@ -32,17 +32,18 @@ resource "google_service_account" "gke_nodes" {
   display_name = "GKE Nodes Service Account"
 }
 
-resource "google_container_cluster" "primary_gke" {
+# GKE Cluster
+resource "google_container_cluster" "primary_nodes" {   # renamed to match node pool
   name               = var.cluster_name
   location           = var.region
   project            = var.project_id
-  initial_node_count = 1  # must be >= 1
+  initial_node_count = 1
   deletion_protection = false
 
   node_config {
-    machine_type  = var.node_machine_type
-    disk_size_gb  = var.disk_size_gb
-    oauth_scopes  = ["https://www.googleapis.com/auth/cloud-platform"]
+    machine_type   = var.node_machine_type
+    disk_size_gb   = var.disk_size_gb
+    oauth_scopes   = ["https://www.googleapis.com/auth/cloud-platform"]
     service_account = google_service_account.gke_nodes.email
   }
 
@@ -59,14 +60,16 @@ resource "google_project_service" "logging" {
 resource "google_container_node_pool" "primary_nodes" {
   name       = "primary-nodes"
   location   = var.region
-  cluster    = google_container_cluster.primary_nodes.name
+  cluster    = google_container_cluster.primary_nodes.name   # updated reference
   node_count = 2
 
   node_config {
-    machine_type = "e2-medium"   # you can change to e2-standard-2 or larger
+    machine_type = "e2-medium"
     disk_size_gb = 50
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform",
     ]
   }
+
+  depends_on = [google_container_cluster.primary_nodes]
 }
