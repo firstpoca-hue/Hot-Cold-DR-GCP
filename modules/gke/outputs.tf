@@ -7,8 +7,8 @@ output "gke_service_account_email" {
 }
 
 output "cluster_name" {
-  value = google_container_cluster.this.name
+  value = google_container_cluster.primary_gke.name
 }
 output "endpoint" {
-  value = google_container_cluster.this.endpoint
+  value = google_container_cluster.primary_gke.endpoint
 }
