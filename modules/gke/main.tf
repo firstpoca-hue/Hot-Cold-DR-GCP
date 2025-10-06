@@ -37,7 +37,7 @@ resource "google_container_cluster" "this" {
   location           = var.region
   project            = var.project_id
   initial_node_count = 1  # must be >= 1
-  deletion_protection = true
+  deletion_protection = false
 
   node_config {
     machine_type  = var.node_machine_type
