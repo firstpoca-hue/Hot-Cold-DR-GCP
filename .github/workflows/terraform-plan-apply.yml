@@ -1,4 +1,4 @@
-name: Terraform Plan & Apply
+name: Provision-HOT(primary)-Infra
 
 on:
   # push:
