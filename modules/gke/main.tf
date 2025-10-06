@@ -59,7 +59,7 @@ resource "google_project_service" "logging" {
 resource "google_container_node_pool" "primary_nodes" {
   name       = "primary-nodes"
   location   = var.region
-  cluster    = google_container_cluster.this.name
+  cluster    = google_container_cluster.primary_nodes.name
   node_count = 2
 
   node_config {
