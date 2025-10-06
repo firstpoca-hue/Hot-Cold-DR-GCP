@@ -46,7 +46,7 @@ resource "google_container_cluster" "this" {
     service_account = google_service_account.gke_nodes.email
   }
 
-  remove_default_node_pool = true
+  remove_default_node_pool = false
 }
 
 resource "google_project_service" "logging" {
