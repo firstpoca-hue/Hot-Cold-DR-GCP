@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: root
+        working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
 
@@ -50,8 +50,10 @@ jobs:
             cloudresourcemanager.googleapis.com \
             serviceusage.googleapis.com \
             --project "${{ steps.proj.outputs.project_id }}"
+
       - name: Terraform Init (GCS backend)
-        run: terraform init -reconfigure
+        run: rm -rf .terraform .terraform.lock.hcl 
+             terraform init -reconfigure
 
   #############################################
   # 🔹 2. Terraform Validate
@@ -62,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: root
+        working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -83,7 +85,7 @@ jobs:
   #   runs-on: ubuntu-latest
   #   defaults:
   #     run:
-  #       working-directory: root
+  #       working-directory: ${{ env.WORKING_DIR }}
   #   steps:
   #     - uses: actions/checkout@v4
 
@@ -114,7 +116,7 @@ jobs:
       has_changes: ${{ steps.plan.outputs.has_changes }}
     defaults:
       run:
-        working-directory: root
+        working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -161,7 +163,7 @@ jobs:
       cancel-in-progress: false
     defaults:
       run:
-        working-directory: root
+        working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
 
