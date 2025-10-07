@@ -16,10 +16,10 @@ variable "region_b" {
 }
 
 variable "cluster_name_prefix" {
-  type        = string
-  default     = "drp-cluster"
+  type    = string
+  default = "drp-cluster"
 }
 
 variable "artifact_registry_location" {
-  
+
 }

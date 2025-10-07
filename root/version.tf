@@ -11,8 +11,8 @@ terraform {
     }
   }
 
-   backend "gcs" {
-   bucket = "hot-cold-drb"
-   prefix = "gke-modular/state"
-   }
+  backend "gcs" {
+    bucket = "hot-cold-drb"
+    prefix = "gke-modular/state"
+  }
 }
