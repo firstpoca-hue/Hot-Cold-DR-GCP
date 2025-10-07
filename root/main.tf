@@ -33,7 +33,6 @@ module "gke_hot" {
 module "monitoring" {
   source               = "../modules/monitoring"
   project_id           = var.project_id
-  workspace_display_name = "my-monitoring-workspace"
   alert_policy_name    = "cpu-alert"
   metric_threshold     = 75
 }
