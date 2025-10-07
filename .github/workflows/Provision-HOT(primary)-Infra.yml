@@ -52,9 +52,21 @@ jobs:
             serviceusage.googleapis.com \
             --project "${{ steps.proj.outputs.project_id }}"
 
-      - name: Terraform Init (GCS backend)
-        run: rm -rf .terraform .terraform.lock.hcl
-             terraform init -reconfigure
+      - name: Terraform Init (Clean, Fmt, Init, Validate)
+        run: |
+              cd root
+              echo "🧹 Cleaning previous Terraform state and lock files..."
+              rm -rf .terraform .terraform.lock.hcl
+
+              echo "🧾 Checking Terraform formatting..."
+              terraform fmt -check
+
+              echo "🔧 Reinitializing Terraform..."
+              terraform init -reconfigure
+
+              echo "✅ Validating Terraform configuration..."
+              terraform validate
+
 
 
   #############################################
