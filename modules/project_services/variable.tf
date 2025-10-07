@@ -32,15 +32,3 @@ variable "region_a" {
   type        = string
   default     = "us"
 }
-
-variable "kms_key_ring_name" {
-   type = string 
-}
-
-variable "kms_crypto_key_name" {
-   type = string
-}
-
-variable "region" {
-  
-}
