@@ -54,7 +54,6 @@ jobs:
 
       - name: Terraform Init (Clean, Fmt, Init, Validate)
         run: |
-              cd root
               echo "🧹 Cleaning previous Terraform state and lock files..."
               rm -rf .terraform .terraform.lock.hcl
 
