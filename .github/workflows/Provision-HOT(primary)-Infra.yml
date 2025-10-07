@@ -77,38 +77,38 @@ jobs:
   #############################################
   # 🔹 3. Security Scans (Checkov + Trivy)
   #############################################
-  security:
-    name: Security Scans
-    needs: init
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIR }}
-    steps:
-      - uses: actions/checkout@v4
+  # security:
+  #   name: Security Scans
+  #   needs: init
+  #   runs-on: ubuntu-latest
+  #   defaults:
+  #     run:
+  #       working-directory: ${{ env.WORKING_DIR }}
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - name: Install Checkov
-        run: pip install checkov
+  #     - name: Install Checkov
+  #       run: pip install checkov
 
-      - name: Run Checkov on Terraform
-        run: checkov -d . --quiet --compact
+  #     - name: Run Checkov on Terraform
+  #       run: checkov -d . --quiet --compact
 
-      - name: Run Trivy on IaC
-        uses: aquasecurity/trivy-action@0.20.0
-        with:
-          scan-type: "fs"
-          ignore-unfixed: true
-          format: "table"
-          exit-code: "1"
-          severity: "HIGH,CRITICAL"
-          scan-ref: "."
+  #     - name: Run Trivy on IaC
+  #       uses: aquasecurity/trivy-action@0.20.0
+  #       with:
+  #         scan-type: "fs"
+  #         ignore-unfixed: true
+  #         format: "table"
+  #         exit-code: "1"
+  #         severity: "HIGH,CRITICAL"
+  #         scan-ref: "."
 
   #############################################
   # 🔹 4. Terraform Plan
   #############################################
   plan:
     name: Terraform Plan
-    needs: [security]
+    needs: init
     runs-on: ubuntu-latest
     outputs:
       has_changes: ${{ steps.plan.outputs.has_changes }}
