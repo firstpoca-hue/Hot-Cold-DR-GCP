@@ -88,6 +88,16 @@ jobs:
           fi
           echo "Destroy confirmation accepted for ${{ env.EXPECTED_PROJECT_ID }}"
 
+      - name: Enable Required APIs
+        run: |
+          gcloud services enable \
+            cloudresourcemanager.googleapis.com \
+            compute.googleapis.com \
+            container.googleapis.com \
+            iam.googleapis.com \
+            monitoring.googleapis.com \
+            --project=${{ env.EXPECTED_PROJECT_ID }}
+
       - name: Terraform Destroy
         run: terraform destroy -var-file="${{ env.TFVARS_PATH }}" -auto-approve
 
