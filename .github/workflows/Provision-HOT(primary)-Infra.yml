@@ -13,9 +13,10 @@ env:
   TF_IN_AUTOMATION: "true"
   WORKING_DIR: root
   TFVARS_PATH: ../env/dev/terraform.tfvars
+  # Tell Terraform where to cache providers
+  TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
  
 jobs:
- 
   # -------------------------------
   # 1️⃣ Terraform Init
   # -------------------------------
@@ -29,25 +30,34 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
  
-      # GCP Authentication
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
  
-      # Terraform Init
+      # Cache provider plugins
+      - name: Cache Terraform plugins
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-plugins-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-plugins-${{ runner.os }}-
+ 
+      # Cache downloaded modules (safe to cache just this subfolder)
+      - name: Cache Terraform modules
+        uses: actions/cache@v4
+        with:
+          path: .terraform/modules
+          key: terraform-modules-${{ runner.os }}-${{ hashFiles('**/versions.tf', '**/providers.tf', '**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-modules-${{ runner.os }}-
+ 
       - name: Terraform Init
         run: terraform init -reconfigure
  
-      # Upload .terraform folder for next jobs
-      - name: Upload .terraform folder
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-initialized
-          path: .terraform
- 
   # -------------------------------
-  # 3️⃣ Terraform Plan
+  # 2️⃣ Terraform Plan
   # -------------------------------
   plan:
     name: Terraform Plan
@@ -62,23 +72,36 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
  
-      # Authenticate to GCP
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
  
-      # Initialize Terraform (modules + backend)
+      - name: Cache Terraform plugins
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-plugins-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-plugins-${{ runner.os }}-
+ 
+      - name: Cache Terraform modules
+        uses: actions/cache@v4
+        with:
+          path: .terraform/modules
+          key: terraform-modules-${{ runner.os }}-${{ hashFiles('**/versions.tf', '**/providers.tf', '**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-modules-${{ runner.os }}-
+ 
       - name: Terraform Init
         run: terraform init -reconfigure
  
-      # Terraform Plan
       - name: Terraform Plan
         id: plan
         shell: bash
         run: |
           set -o pipefail
-          set +e  # allow non-zero exit (e.g., 2 = "changes present")
+          set +e
           terraform validate
           terraform plan \
             -var-file="${{ env.TFVARS_PATH }}" \
@@ -95,7 +118,6 @@ jobs:
             exit $code
           fi
  
-      # Upload Plan Artifact only when changes exist
       - name: Upload Plan Artifact
         if: ${{ steps.plan.outputs.has_changes == 'true' }}
         uses: actions/upload-artifact@v4
@@ -106,12 +128,11 @@ jobs:
             plan.txt
  
   # -------------------------------
-  # 4️⃣ Terraform Apply
+  # 3️⃣ Terraform Apply
   # -------------------------------
   apply:
     name: Terraform Apply
     needs: plan
-    # if: run when plan detects changes OR user forces apply
     if: ${{ inputs.force_apply || needs.plan.outputs.has_changes == 'true' }}
     runs-on: ubuntu-latest
     defaults:
@@ -121,24 +142,30 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
  
-      # GCP Authentication
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
  
-      # Restore .terraform from init (optional but keeps plugins/modules warm)
-      - name: Download .terraform folder
-        uses: actions/download-artifact@v4
+      - name: Cache Terraform plugins
+        uses: actions/cache@v4
         with:
-          name: terraform-initialized
-          path: .terraform
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-plugins-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-plugins-${{ runner.os }}-
  
-      # Re-init to ensure backend & providers are configured on this runner
+      - name: Cache Terraform modules
+        uses: actions/cache@v4
+        with:
+          path: .terraform/modules
+          key: terraform-modules-${{ runner.os }}-${{ hashFiles('**/versions.tf', '**/providers.tf', '**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-modules-${{ runner.os }}-
+ 
       - name: Terraform Init
         run: terraform init -reconfigure
  
-      # Download plan only if changes were detected
       - name: Download Plan Artifact
         if: ${{ needs.plan.outputs.has_changes == 'true' }}
         uses: actions/download-artifact@v4
@@ -146,12 +173,10 @@ jobs:
           name: tfplan
           path: .
  
-      # Apply from saved plan (when changes exist)
       - name: Terraform Apply (from plan)
         if: ${{ needs.plan.outputs.has_changes == 'true' }}
         run: terraform apply -input=false -auto-approve tfplan.bin
  
-      # Forced apply without saved plan (no changes detected but user insisted)
-      - name: Terraform Apply (forced)
+      - name: Terraform Apply (forced w/o plan)
         if: ${{ inputs.force_apply && needs.plan.outputs.has_changes != 'true' }}
-        run: terraform apply -input=false -auto-approve -var-file="${{ env.TFVARS_PATH }}"
+        run: terraform apply -input=false -auto-approve -var-file="${{ env.TFVARS_PATH }}
