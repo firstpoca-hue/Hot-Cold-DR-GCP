@@ -53,8 +53,9 @@ jobs:
 
       - name: Terraform Init (GCS backend)
         run: terraform init -reconfigure
-        working-directory: ${{ env.WORKING_DIR }}
-
+        
+      - name: Terraform Validate
+        run: terraform validate
   #############################################
   # 🔹 2. Terraform Validate
   #############################################
