@@ -56,28 +56,7 @@ jobs:
         
       - name: Terraform Validate
         run: terraform validate
-  #############################################
-  # 🔹 2. Terraform Validate
-  #############################################
-  validate:
-    name: Terraform Validate
-    needs: init
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIR }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-      - name: Terraform Init (GCS backend)
-        run: terraform init -reconfigure
-
-      - name: Terraform Validate
-        run: |
-               ls
-                pwd
-                terraform validate
-        working-directory: ${{ env.WORKING_DIR }}         
+        
   
 
 
@@ -124,10 +103,8 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
       
-      - name: Terraform Init (GCS backend)
-        run: terraform init -reconfigure
+      - uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Plan (detect changes)
         id: plan
