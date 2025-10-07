@@ -39,19 +39,50 @@ jobs:
       - name: Terraform Init
         run: terraform init -reconfigure
  
-      # Upload .terraform folder for next jobs
+      # Upload .terraform folder for next jobs (optional)
       - name: Upload .terraform folder
         uses: actions/upload-artifact@v4
         with:
           name: terraform-initialized
           path: .terraform
  
+ 
+  # -------------------------------
+  # 2️⃣ Security Scan (Checkov + Trivy)
+  # -------------------------------
+  security:
+    name: Security Scan (Checkov + Trivy)
+    runs-on: ubuntu-latest
+    needs: init
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+ 
+      # Install Checkov
+      - name: Install Checkov
+        run: pip install checkov
+ 
+      # Run Checkov scan
+      - name: Run Checkov
+        run: |
+          echo "🔍 Running Checkov security scan..."
+          checkov -d . --quiet --compact
+ 
+      # Run Trivy scan
+      - name: Run Trivy
+        run: |
+          echo "🔍 Running Trivy vulnerability scan..."
+          docker run --rm -v $PWD:/scan aquasec/trivy fs --exit-code 1 --severity HIGH,CRITICAL /scan
+ 
+ 
   # -------------------------------
   # 3️⃣ Terraform Plan
   # -------------------------------
   plan:
     name: Terraform Plan
-    needs: init
+    needs: [init, security]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -68,7 +99,7 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
  
-      # Initialize Terraform (modules + backend)
+      # Terraform Init
       - name: Terraform Init
         run: terraform init -reconfigure
  
@@ -78,7 +109,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          set +e  # allow non-zero exit (e.g., 2 = "changes present")
+          set +e  # allow non-zero exit (2 = "changes present")
           terraform validate
           terraform plan \
             -var-file="${{ env.TFVARS_PATH }}" \
@@ -95,7 +126,7 @@ jobs:
             exit $code
           fi
  
-      # Upload Plan Artifact only when changes exist
+      # Upload plan output only if changes exist
       - name: Upload Plan Artifact
         if: ${{ steps.plan.outputs.has_changes == 'true' }}
         uses: actions/upload-artifact@v4
@@ -105,13 +136,13 @@ jobs:
             tfplan.bin
             plan.txt
  
+ 
   # -------------------------------
   # 4️⃣ Terraform Apply
   # -------------------------------
   apply:
     name: Terraform Apply
     needs: plan
-    # if: run when plan detects changes OR user forces apply
     if: ${{ inputs.force_apply || needs.plan.outputs.has_changes == 'true' }}
     runs-on: ubuntu-latest
     defaults:
@@ -127,18 +158,11 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
  
-      # Restore .terraform from init (optional but keeps plugins/modules warm)
-      # - name: Download .terraform folder
-      #   uses: actions/download-artifact@v4
-      #   with:
-      #     name: terraform-initialized
-      #     path: .terraform
- 
-      # Re-init to ensure backend & providers are configured on this runner
+      # Terraform Init
       - name: Terraform Init
         run: terraform init -reconfigure
  
-      # Download plan only if changes were detected
+      # Download Plan
       - name: Download Plan Artifact
         if: ${{ needs.plan.outputs.has_changes == 'true' }}
         uses: actions/download-artifact@v4
@@ -146,12 +170,12 @@ jobs:
           name: tfplan
           path: .
  
-      # Apply from saved plan (when changes exist)
+      # Apply from saved plan (if changes exist)
       - name: Terraform Apply (from plan)
         if: ${{ needs.plan.outputs.has_changes == 'true' }}
         run: terraform apply -input=false -auto-approve tfplan.bin
  
-      # Forced apply without saved plan (no changes detected but user insisted)
+      # Forced apply (if user requested)
       - name: Terraform Apply (forced)
         if: ${{ inputs.force_apply && needs.plan.outputs.has_changes != 'true' }}
         run: terraform apply -input=false -auto-approve -var-file="${{ env.TFVARS_PATH }}"
