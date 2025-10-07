@@ -20,13 +20,15 @@ env:
   TFVARS_PATH: ../env/dev/terraform.tfvars
 
 jobs:
-  plan:
+  #############################################
+  # 🔹 1. Terraform Init
+  #############################################
+  init:
+    name: Terraform Init
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIR }}
-    outputs:
-      has_changes: ${{ steps.plan.outputs.has_changes }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +36,8 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: hashicorp/setup-terraform@v3
 
       - name: Read project_id from tfvars
         id: proj
@@ -48,25 +52,45 @@ jobs:
             serviceusage.googleapis.com \
             --project "${{ steps.proj.outputs.project_id }}"
 
-      - uses: hashicorp/setup-terraform@v3
-
       - name: Terraform Init (GCS backend)
         run: terraform init -reconfigure
 
+  #############################################
+  # 🔹 2. Terraform Validate
+  #############################################
+  validate:
+    name: Terraform Validate
+    needs: init
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
       - name: Terraform Validate
         run: terraform validate
 
-      #############################################
-      # 🔍 SECURITY SCANS (Checkov + Trivy)
-      #############################################
+  #############################################
+  # 🔹 3. Security Scans (Checkov + Trivy)
+  #############################################
+  security:
+    name: Security Scans
+    needs: validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Install Checkov
         run: pip install checkov
 
-      - name: Run Checkov on Terraform code
+      - name: Run Checkov on Terraform
         run: checkov -d . --quiet --compact
 
-      - name: Run Trivy on IaC (Terraform) for vulnerabilities
+      - name: Run Trivy on IaC
         uses: aquasecurity/trivy-action@0.20.0
         with:
           scan-type: "fs"
@@ -76,9 +100,23 @@ jobs:
           severity: "HIGH,CRITICAL"
           scan-ref: "."
 
-      #############################################
+  #############################################
+  # 🔹 4. Terraform Plan
+  #############################################
+  plan:
+    name: Terraform Plan
+    needs: [security]
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Plan (fail fast; detect changes)
+      - name: Terraform Plan (detect changes)
         id: plan
         run: |
           set -o pipefail
@@ -95,7 +133,7 @@ jobs:
             exit $code
           fi
 
-      - name: Upload Plan Artifact (only if changes)
+      - name: Upload Plan Artifact
         if: ${{ steps.plan.outputs.has_changes == 'true' }}
         uses: actions/upload-artifact@v4
         with:
@@ -104,9 +142,15 @@ jobs:
             ${{ env.WORKING_DIR }}/tfplan.bin
             ${{ env.WORKING_DIR }}/plan.txt
 
+  #############################################
+  # 🔹 5. Terraform Apply
+  #############################################
   apply:
+    name: Terraform Apply
     needs: plan
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push' && (needs.plan.outputs.has_changes == 'true' || inputs.force_apply == true)) }}
+    if: ${{ github.event_name == 'workflow_dispatch' ||
+            (github.ref == 'refs/heads/main' && github.event_name == 'push' &&
+            (needs.plan.outputs.has_changes == 'true' || inputs.force_apply == true)) }}
     runs-on: ubuntu-latest
     environment: prod
     concurrency:
@@ -118,7 +162,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Plan Artifact (best-effort)
+      - name: Download Plan Artifact (if available)
         id: dl
         uses: actions/download-artifact@v4
         with:
@@ -126,17 +170,11 @@ jobs:
           path: ${{ env.WORKING_DIR }}
         continue-on-error: true
 
-      - name: Google Auth
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
       - uses: hashicorp/setup-terraform@v3
-
       - name: Terraform Init (reconfigure)
         run: terraform init -reconfigure
 
-      - name: Recreate plan if missing or forced
+      - name: Recreate Plan if Missing or Forced
         if: ${{ steps.dl.outcome == 'failure' || inputs.force_apply == true }}
         run: |
           echo "Recreating plan (artifact missing or force_apply=true)"
