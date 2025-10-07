@@ -9,20 +9,16 @@ on:
         type: boolean
         default: false
 
-permissions:
-  contents: read
-  id-token: write
-  pull-requests: write
-
 env:
   TF_IN_AUTOMATION: "true"
   WORKING_DIR: root
   TFVARS_PATH: ../env/dev/terraform.tfvars
 
 jobs:
-  #############################################
-  # 🔹 1. Terraform Init
-  #############################################
+
+  # -------------------------------
+  # 1️⃣ Terraform Init
+  # -------------------------------
   init:
     name: Terraform Init
     runs-on: ubuntu-latest
@@ -31,85 +27,44 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Google Auth
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
       - uses: hashicorp/setup-terraform@v3
 
-      - name: Read project_id from tfvars
-        id: proj
-        run: |
-          PROJECT_ID=$(grep -E '^\s*project_id\s*=' "${{ env.TFVARS_PATH }}" | sed -E 's/.*=\s*"([^"]+)".*/\1/')
-          echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
-      - name: Enable core Google APIs
-        run: |
-          gcloud services enable \
-            cloudresourcemanager.googleapis.com \
-            serviceusage.googleapis.com \
-            --project "${{ steps.proj.outputs.project_id }}"
-
-      - name: Terraform Init (GCS backend)
+      - name: Terraform Init
         run: terraform init -reconfigure
-        
-      - name: Terraform Validate
-        run: terraform validate
-        
-  
 
+      - name: Upload .terraform Folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-initialized
+          path: .terraform
 
-  #############################################
-  # 🔹 3. Security Scans (Checkov + Trivy)
-  #############################################
-  # security:
-  #   name: Security Scans
-  #   needs: init
-  #   runs-on: ubuntu-latest
-  #   defaults:
-  #     run:
-  #       working-directory: ${{ env.WORKING_DIR }}
-  #   steps:
-  #     - uses: actions/checkout@v4
-
-  #     - name: Install Checkov
-  #       run: pip install checkov
-
-  #     - name: Run Checkov on Terraform
-  #       run: checkov -d . --quiet --compact
-
-  #     - name: Run Trivy on IaC
-  #       uses: aquasecurity/trivy-action@0.20.0
-  #       with:
-  #         scan-type: "fs"
-  #         ignore-unfixed: true
-  #         format: "table"
-  #         exit-code: "1"
-  #         severity: "HIGH,CRITICAL"
-  #         scan-ref: "."
-
-  #############################################
-  # 🔹 4. Terraform Plan
-  #############################################
+  # -------------------------------
+  # 2️⃣ Terraform Plan
+  # -------------------------------
   plan:
     name: Terraform Plan
     needs: init
     runs-on: ubuntu-latest
-    outputs:
-      has_changes: ${{ steps.plan.outputs.has_changes }}
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIR }}
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
     steps:
       - uses: actions/checkout@v4
-      
       - uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Plan (detect changes)
+      - name: Download Initialized Terraform
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-initialized
+          path: .terraform
+
+      - name: Terraform Plan
         id: plan
         run: |
           set -o pipefail
+          terraform validate
           terraform plan \
             -var-file="${{ env.TFVARS_PATH }}" \
             -input=false -no-color -out=tfplan.bin -detailed-exitcode | tee plan.txt
@@ -119,9 +74,8 @@ jobs:
           elif [ $code -eq 2 ]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
           else
-            echo "Plan failed. See plan.txt above."
+            echo "Plan failed"
             exit $code
-          fi
 
       - name: Upload Plan Artifact
         if: ${{ steps.plan.outputs.has_changes == 'true' }}
@@ -129,50 +83,35 @@ jobs:
         with:
           name: tfplan
           path: |
-            ${{ env.WORKING_DIR }}/tfplan.bin
-            ${{ env.WORKING_DIR }}/plan.txt
+            tfplan.bin
+            plan.txt
 
-  #############################################
-  # 🔹 5. Terraform Apply
-  #############################################
+  # -------------------------------
+  # 3️⃣ Terraform Apply
+  # -------------------------------
   apply:
     name: Terraform Apply
     needs: plan
-    if: ${{ github.event_name == 'workflow_dispatch' ||
-            (github.ref == 'refs/heads/main' && github.event_name == 'push' &&
-            (needs.plan.outputs.has_changes == 'true' || inputs.force_apply == true)) }}
+    if: ${{ github.event.inputs.force_apply == 'true' || needs.plan.outputs.has_changes == 'true' }}
     runs-on: ubuntu-latest
-    environment: prod
-    concurrency:
-      group: tf-prod
-      cancel-in-progress: false
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
 
-      - name: Download Plan Artifact (if available)
-        id: dl
+      - name: Download Plan Artifact
         uses: actions/download-artifact@v4
         with:
           name: tfplan
-          path: ${{ env.WORKING_DIR }}
-        continue-on-error: true
+          path: .
 
-      - uses: hashicorp/setup-terraform@v3
-      - name: Terraform Init (reconfigure)
-        run: terraform init -reconfigure
-
-      - name: Recreate Plan if Missing or Forced
-        if: ${{ steps.dl.outcome == 'failure' || inputs.force_apply == true }}
-        run: |
-          echo "Recreating plan (artifact missing or force_apply=true)"
-          terraform plan \
-            -var-file="${{ env.TFVARS_PATH }}" \
-            -input=false -no-color -out=tfplan.bin
-        working-directory: ${{ env.WORKING_DIR }}     
+      - name: Download Initialized Terraform
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-initialized
+          path: .terraform
 
       - name: Terraform Apply
         run: terraform apply -input=false -auto-approve tfplan.bin
-        working-directory: ${{ env.WORKING_DIR }}
