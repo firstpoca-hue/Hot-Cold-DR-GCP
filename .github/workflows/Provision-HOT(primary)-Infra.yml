@@ -71,10 +71,8 @@ jobs:
         run: |
                ls
                 pwd
-                cd root
                 rm -rf .terraform .terraform.lock.hcl
                 terraform fmt -check
-                terraform init -reconfigure
                 terraform validate
 
 
