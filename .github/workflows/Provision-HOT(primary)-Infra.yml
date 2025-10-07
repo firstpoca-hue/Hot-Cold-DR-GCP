@@ -53,6 +53,7 @@ jobs:
 
       - name: Terraform Init (GCS backend)
         run: terraform init -reconfigure
+        working-directory: ${{ env.WORKING_DIR }}
 
   #############################################
   # 🔹 2. Terraform Validate
@@ -73,6 +74,8 @@ jobs:
                ls
                 pwd
                 terraform validate
+        working-directory: ${{ env.WORKING_DIR }}         
+  
 
 
   #############################################
@@ -185,6 +188,8 @@ jobs:
           terraform plan \
             -var-file="${{ env.TFVARS_PATH }}" \
             -input=false -no-color -out=tfplan.bin
+        working-directory: ${{ env.WORKING_DIR }}     
 
       - name: Terraform Apply
         run: terraform apply -input=false -auto-approve tfplan.bin
+        working-directory: ${{ env.WORKING_DIR }}
