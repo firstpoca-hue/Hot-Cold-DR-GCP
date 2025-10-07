@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'hot-cold-drp'
+        description: 'Type: DESTROY hot-cold-drp'
         required: true
         type: string
 
@@ -16,6 +16,7 @@ env:
   TF_IN_AUTOMATION: "true"
   WORKING_DIR: root
   TFVARS_PATH: ../env/dev/terraform.tfvars
+  EXPECTED_PROJECT_ID: hot-cold-drp
 
 jobs:
   destroy:
@@ -44,16 +45,47 @@ jobs:
 
       - name: Read project_id from tfvars
         id: read
+        shell: bash
         run: |
-          PROJECT_ID=$(grep -E '^\s*project_id\s*=' "${{ env.TFVARS_PATH }}" | sed -E 's/.*=\s*"([^"]+)".*/\1/')
-          echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
-
-      - name: Verify confirmation matches project_id
-        run: |
-          if [ "${{ github.event.inputs.confirm }}" != "${{ steps.read.outputs.project_id }}" ]; then
-            echo "Confirmation did not match project_id. Refusing to destroy."
+          set -euo pipefail
+          if [[ ! -f "${{ env.TFVARS_PATH }}" ]]; then
+            echo "tfvars file not found at ${{ env.TFVARS_PATH }}"
             exit 1
           fi
+          line="$(grep -E '^[[:space:]]*project_id[[:space:]]*=' "${{ env.TFVARS_PATH }}" || true)"
+          if [[ -z "$line" ]]; then
+            echo "project_id not found in ${{ env.TFVARS_PATH }}"
+            exit 1
+          fi
+          PROJECT_ID="$(sed -E 's/.*=\s*"([^"]+)".*/\1/' <<<"$line" | xargs)"
+          if [[ -z "$PROJECT_ID" ]]; then
+            echo "project_id parsed empty from ${{ env.TFVARS_PATH }}"
+            exit 1
+          fi
+          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Sanity check tfvars project_id is expected
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ steps.read.outputs.project_id }}" != "${{ env.EXPECTED_PROJECT_ID }}" ]]; then
+            echo "tfvars project_id [${{ steps.read.outputs.project_id }}] != expected [${{ env.EXPECTED_PROJECT_ID }}]. Refusing to destroy."
+            exit 1
+          fi
+          echo "tfvars project_id matches expected: ${{ env.EXPECTED_PROJECT_ID }}"
+
+      - name: Verify confirmation matches "DESTROY <project_id>"
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${{ github.event.inputs.confirm }}"
+          WANT="DESTROY ${{ env.EXPECTED_PROJECT_ID }}"
+          GOT="$(echo "${{ github.event.inputs.confirm }}" | xargs)"
+          if [[ "$GOT" != "$WANT" ]]; then
+            echo "Expected confirmation: [$WANT], got: [${GOT:-<empty>}]. Refusing to destroy."
+            exit 1
+          fi
+          echo "Destroy confirmation accepted for ${{ env.EXPECTED_PROJECT_ID }}"
 
       - name: Terraform Destroy
         run: terraform destroy -var-file="${{ env.TFVARS_PATH }}" -auto-approve
