@@ -66,12 +66,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
+
       - name: Terraform Validate
         run: |
                ls
-               pwd
-               cd Hot-Cold-DR-GCP/root
-               terraform validate
+                pwd
+                cd root
+                rm -rf .terraform .terraform.lock.hcl
+                terraform fmt -check
+                terraform init -reconfigure
+                terraform validate
 
 
   #############################################
