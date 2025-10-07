@@ -24,3 +24,8 @@ resource "google_monitoring_alert_policy" "cpu_alert" {
   notification_channels = [] # You can attach notification channels here
   enabled = true
 }
+
+resource "google_project_service" "monitoring" {
+  project = var.project_id
+  service = "monitoring.googleapis.com"
+}
