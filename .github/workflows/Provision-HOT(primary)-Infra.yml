@@ -20,91 +20,170 @@ env:
   TFVARS_PATH: ../env/dev/terraform.tfvars
 
 jobs:
-  terraform:
+  #############################################
+  # 🔹 1. Terraform Init
+  #############################################
+  init:
+    name: Terraform Init
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIR }}
-    outputs:
-      has_changes: ${{ steps.plan.outputs.has_changes }}
-
     steps:
-      # -------------------------------
-      # 1️⃣ Initialization
-      # -------------------------------
-      - name: Initialization
+      - uses: actions/checkout@v4
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Read project_id from tfvars
+        id: proj
         run: |
-          echo "Step: Checkout and Setup"
-          git clone ${{ github.repository_url }} .
-          
-          echo "Step: Google Cloud Authentication"
-          gcloud auth activate-service-account --key-file="${{ secrets.GCP_SA_KEY }}"
-          
-          echo "Step: Read project_id from tfvars"
           PROJECT_ID=$(grep -E '^\s*project_id\s*=' "${{ env.TFVARS_PATH }}" | sed -E 's/.*=\s*"([^"]+)".*/\1/')
           echo "project_id=$PROJECT_ID" >> $GITHUB_OUTPUT
-          
-          echo "Step: Enable core Google APIs"
-          gcloud services enable cloudresourcemanager.googleapis.com serviceusage.googleapis.com --project $PROJECT_ID
-          
-          echo "Step: Terraform Init"
-          terraform init -reconfigure
-
-      # -------------------------------
-      # 2️⃣ Security Scans
-      # -------------------------------
-      - name: Security Scans
+      - name: Enable core Google APIs
         run: |
-          echo "Installing Checkov"
-          pip install checkov
-          echo "Running Checkov scan"
-          checkov -d . --quiet --compact
-          
-          echo "Running Trivy scan"
-          docker run --rm -v $PWD:/scan aquasec/trivy fs --exit-code 1 --severity HIGH,CRITICAL /scan
+          gcloud services enable \
+            cloudresourcemanager.googleapis.com \
+            serviceusage.googleapis.com \
+            --project "${{ steps.proj.outputs.project_id }}"
+      - name: Terraform Init (GCS backend)
+        run: terraform init -reconfigure
 
-      # -------------------------------
-      # 3️⃣ Terraform Plan
-      # -------------------------------
-      - name: Terraform Plan
+  #############################################
+  # 🔹 2. Terraform Validate
+  #############################################
+  validate:
+    name: Terraform Validate
+    needs: init
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Validate
+        run: |
+               ls
+                pwd
+                terraform validate
+
+
+  #############################################
+  # 🔹 3. Security Scans (Checkov + Trivy)
+  #############################################
+  security:
+    name: Security Scans
+    needs: validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Run Checkov on Terraform
+        run: checkov -d . --quiet --compact
+
+      - name: Run Trivy on IaC
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: "fs"
+          ignore-unfixed: true
+          format: "table"
+          exit-code: "1"
+          severity: "HIGH,CRITICAL"
+          scan-ref: "."
+
+  #############################################
+  # 🔹 4. Terraform Plan
+  #############################################
+  plan:
+    name: Terraform Plan
+    needs: [security]
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Plan (detect changes)
         id: plan
         run: |
           set -o pipefail
-          terraform validate
-          terraform plan -var-file="${{ env.TFVARS_PATH }}" -input=false -no-color -out=tfplan.bin -detailed-exitcode | tee plan.txt
+          terraform plan \
+            -var-file="${{ env.TFVARS_PATH }}" \
+            -input=false -no-color -out=tfplan.bin -detailed-exitcode | tee plan.txt
           code=$?
           if [ $code -eq 0 ]; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
           elif [ $code -eq 2 ]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
           else
-            echo "Terraform plan failed"
+            echo "Plan failed. See plan.txt above."
             exit $code
+          fi
 
-      # -------------------------------
-      # 4️⃣ Upload Plan Artifact
-      # -------------------------------
       - name: Upload Plan Artifact
         if: ${{ steps.plan.outputs.has_changes == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: tfplan
           path: |
-            tfplan.bin
-            plan.txt
+            ${{ env.WORKING_DIR }}/tfplan.bin
+            ${{ env.WORKING_DIR }}/plan.txt
 
-      # -------------------------------
-      # 5️⃣ Terraform Apply
-      # -------------------------------
-      - name: Terraform Apply
+  #############################################
+  # 🔹 5. Terraform Apply
+  #############################################
+  apply:
+    name: Terraform Apply
+    needs: plan
+    if: ${{ github.event_name == 'workflow_dispatch' ||
+            (github.ref == 'refs/heads/main' && github.event_name == 'push' &&
+            (needs.plan.outputs.has_changes == 'true' || inputs.force_apply == true)) }}
+    runs-on: ubuntu-latest
+    environment: prod
+    concurrency:
+      group: tf-prod
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Plan Artifact (if available)
+        id: dl
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.WORKING_DIR }}
+        continue-on-error: true
+
+      - uses: hashicorp/setup-terraform@v3
+      - name: Terraform Init (reconfigure)
+        run: terraform init -reconfigure
+
+      - name: Recreate Plan if Missing or Forced
+        if: ${{ steps.dl.outcome == 'failure' || inputs.force_apply == true }}
         run: |
-          echo "Downloading plan artifact if exists"
-          gh actions download-artifact tfplan --dir .
-          
-          if [ ! -f tfplan.bin ] || [ "${{ github.event.inputs.force_apply }}" == "true" ]; then
-            echo "Recreating plan because artifact missing or force_apply=true"
-            terraform plan -var-file="${{ env.TFVARS_PATH }}" -input=false -no-color -out=tfplan.bin
-          fi
+          echo "Recreating plan (artifact missing or force_apply=true)"
+          terraform plan \
+            -var-file="${{ env.TFVARS_PATH }}" \
+            -input=false -no-color -out=tfplan.bin
 
-          echo "Applying Terraform changes"
-          terraform apply -input=false -auto-approve tfplan.bin
+      - name: Terraform Apply
+        run: terraform apply -input=false -auto-approve tfplan.bin
