@@ -1,7 +1,7 @@
 # Create Monitoring Workspace
-resource "google_monitoring_workspace" "workspace" {
-  project = var.project_id
-}
+# resource "google_monitoring_workspace" "workspace" {
+#   project = var.project_id
+# }
 
 # Create an alerting policy for CPU usage
 resource "google_monitoring_alert_policy" "cpu_alert" {
