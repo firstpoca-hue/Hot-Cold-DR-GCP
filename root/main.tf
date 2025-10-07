@@ -29,3 +29,11 @@ module "gke_hot" {
   service_account_email  = module.project_services.gke_service_account_email
   workload_identity_pool = "${var.project_id}.svc.id.goog"
 }
+
+module "monitoring" {
+  source               = "../modules/monitoring"
+  project_id           = var.project_id
+  workspace_display_name = "my-monitoring-workspace"
+  alert_policy_name    = "cpu-alert"
+  metric_threshold     = 75
+}
