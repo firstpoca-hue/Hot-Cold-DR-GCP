@@ -52,8 +52,7 @@ jobs:
             --project "${{ steps.proj.outputs.project_id }}"
 
       - name: Terraform Init (GCS backend)
-        run: rm -rf .terraform .terraform.lock.hcl 
-             terraform init -reconfigure
+        run: terraform init -reconfigure
 
   #############################################
   # 🔹 2. Terraform Validate
