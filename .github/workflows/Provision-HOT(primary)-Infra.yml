@@ -67,9 +67,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
       - name: Terraform Validate
-        run: 
-            cd Hot-Cold-DR-GCP/root
-            terraform validate
+        run: |
+               ls
+               pwd
+               cd Hot-Cold-DR-GCP/root
+               terraform validate
+
 
   #############################################
   # 🔹 3. Security Scans (Checkov + Trivy)
