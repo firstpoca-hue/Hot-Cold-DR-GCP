@@ -28,6 +28,7 @@ jobs:
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIR }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -89,3 +90,10 @@ jobs:
 
       - name: Terraform Destroy
         run: terraform destroy -var-file="${{ env.TFVARS_PATH }}" -auto-approve
+
+      - name: Disable compute.googleapis.com (and dependent services)
+        run: |
+          gcloud services disable compute.googleapis.com \
+            --project=${{ env.EXPECTED_PROJECT_ID }} \
+            --force \
+            --disable-dependent-services
