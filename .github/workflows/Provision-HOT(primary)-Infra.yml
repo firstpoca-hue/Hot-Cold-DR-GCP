@@ -47,7 +47,7 @@ jobs:
           path: .terraform
 
   # -------------------------------
-  # 2️⃣ Security Scan (Checkov + Trivy)
+  # 2️⃣ Security Scan (Checkov + Trivy) - commented
   # -------------------------------
   # security:
   #   name: Security Scan
@@ -58,13 +58,13 @@ jobs:
   #   needs: init
   #   steps:
   #     - uses: actions/checkout@v4
-
+  #
   #     - name: Install Checkov
   #       run: pip install checkov
-
+  #
   #     - name: Run Checkov
   #       run: checkov -d . --quiet --compact
-
+  #
   #     - name: Run Trivy
   #       run: |
   #         docker run --rm -v $PWD:/scan aquasec/trivy fs --exit-code 1 --severity HIGH,CRITICAL /scan
