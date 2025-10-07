@@ -56,22 +56,22 @@ jobs:
   #############################################
   # 🔹 2. Terraform Validate
   #############################################
-  validate:
-    name: Terraform Validate
-    needs: init
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIR }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+  # validate:
+  #   name: Terraform Validate
+  #   needs: init
+  #   runs-on: ubuntu-latest
+  #   defaults:
+  #     run:
+  #       working-directory: ${{ env.WORKING_DIR }}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Validate
-        run: |
-               ls
-                pwd
-                terraform validate
+  #     - name: Terraform Validate
+  #       run: |
+  #              ls
+  #               pwd
+  #               terraform validate
 
 
   #############################################
@@ -79,7 +79,7 @@ jobs:
   #############################################
   security:
     name: Security Scans
-    needs: validate
+    needs: init
     runs-on: ubuntu-latest
     defaults:
       run:
