@@ -29,17 +29,48 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
 
+      # GCP Authentication
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # Terraform Init
       - name: Terraform Init
         run: terraform init -reconfigure
 
-      - name: Upload .terraform Folder
+      # Upload .terraform folder for next jobs
+      - name: Upload .terraform folder
         uses: actions/upload-artifact@v4
         with:
           name: terraform-initialized
           path: .terraform
 
   # -------------------------------
-  # 2️⃣ Terraform Plan
+  # 2️⃣ Security Scan (Checkov + Trivy)
+  # -------------------------------
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    needs: init
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Run Checkov
+        run: checkov -d . --quiet --compact
+
+      - name: Run Trivy
+        run: |
+          docker run --rm -v $PWD:/scan aquasec/trivy fs --exit-code 1 --severity HIGH,CRITICAL /scan
+
+  # -------------------------------
+  # 3️⃣ Terraform Plan
   # -------------------------------
   plan:
     name: Terraform Plan
@@ -54,12 +85,20 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
 
-      - name: Download Initialized Terraform
+      # Download initialized Terraform
+      - name: Download .terraform folder
         uses: actions/download-artifact@v4
         with:
           name: terraform-initialized
           path: .terraform
 
+      # GCP Authentication (required for modules and backend)
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # Terraform Plan
       - name: Terraform Plan
         id: plan
         run: |
@@ -77,6 +116,7 @@ jobs:
             echo "Plan failed"
             exit $code
 
+      # Upload plan artifact
       - name: Upload Plan Artifact
         if: ${{ steps.plan.outputs.has_changes == 'true' }}
         uses: actions/upload-artifact@v4
@@ -87,7 +127,7 @@ jobs:
             plan.txt
 
   # -------------------------------
-  # 3️⃣ Terraform Apply
+  # 4️⃣ Terraform Apply
   # -------------------------------
   apply:
     name: Terraform Apply
@@ -101,17 +141,26 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
 
+      # Download .terraform folder
+      - name: Download .terraform folder
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-initialized
+          path: .terraform
+
+      # Download plan
       - name: Download Plan Artifact
         uses: actions/download-artifact@v4
         with:
           name: tfplan
           path: .
 
-      - name: Download Initialized Terraform
-        uses: actions/download-artifact@v4
+      # GCP Authentication
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
         with:
-          name: terraform-initialized
-          path: .terraform
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      # Apply
       - name: Terraform Apply
         run: terraform apply -input=false -auto-approve tfplan.bin
