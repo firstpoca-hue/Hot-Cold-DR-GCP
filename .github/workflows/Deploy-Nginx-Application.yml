@@ -1,52 +1,50 @@
 name: Deploy-Nginx-Application
-
+ 
 on:
   workflow_dispatch:
-
+ 
 permissions:
   contents: read
   id-token: write
-
+  security-events: write   # for SARIF uploads
+ 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   LOCATION: us-central1
   CLUSTER_NAME: app-cluster-hot
-  # repo without tag
   IMAGE_REPO: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gke-docker-repo/nginx-simple-app
-  # immutable tag per commit
   IMAGE_TAG: ${{ github.sha }}
-  # full image reference used for deploy
   IMAGE_NAME: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gke-docker-repo/nginx-simple-app:${{ github.sha }}
-
+ 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+ 
     steps:
       - uses: actions/checkout@v4
-
+ 
       - name: Google Cloud Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
-
+ 
       - name: Install gcloud and GKE auth plugin
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
           install_components: 'gke-gcloud-auth-plugin'
           export_default_credentials: true
-
+ 
       - name: Enable GKE auth plugin
         run: echo "USE_GKE_GCLOUD_AUTH_PLUGIN=True" >> $GITHUB_ENV
-
+ 
       - name: Set GCP project
         run: gcloud config set project $PROJECT_ID
-
+ 
       - name: Enable Required APIs
         run: |
           gcloud services enable artifactregistry.googleapis.com container.googleapis.com --project "$PROJECT_ID"
-
-      # 🔐 Ensure node SA can pull from Artifact Registry (idempotent)
+ 
       - name: Grant Artifact Registry pull to GKE node SA
         id: grant-ar
         shell: bash
@@ -63,36 +61,151 @@ jobs:
             --role="roles/artifactregistry.reader" \
             --quiet
           sleep 10
-
+ 
       - name: Configure Docker (Artifact Registry)
         run: gcloud auth configure-docker us-docker.pkg.dev --quiet
-
-      # Build with both immutable tag and 'latest' (latest is optional)
+ 
+      # -----------------------------------------
+      # 🔎 Human-readable artifact scans (non-fatal)
+      # -----------------------------------------
+ 
+      - name: Trivy FS (artifact)
+        uses: aquasecurity/trivy-action@0.28.0
+        continue-on-error: true
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          output: trivy-fs.txt
+          exit-code: '0'
+          scanners: vuln,secret,misconfig,license
+ 
       - name: Build Docker Image
         run: |
           docker build -t "$IMAGE_REPO:$IMAGE_TAG" -t "$IMAGE_REPO:latest" -f DockerFile .
-
+ 
+      - name: Trivy Image (artifact)
+        uses: aquasecurity/trivy-action@0.28.0
+        continue-on-error: true
+        with:
+          image-ref: ${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
+          format: table
+          output: trivy-image.txt
+          exit-code: '0'
+          ignore-unfixed: true
+          scanners: vuln,secret,misconfig,license
+ 
+      - name: Combine Trivy outputs -> trivy.output
+        shell: bash
+        run: |
+          {
+            echo "===== TRIVY FS SCAN (repo) ====="
+            cat trivy-fs.txt 2>/dev/null || true
+            echo
+            echo "===== TRIVY IMAGE SCAN (${IMAGE_REPO}:${IMAGE_TAG}) ====="
+            cat trivy-image.txt 2>/dev/null || true
+          } > trivy.output
+ 
+      - name: Checkov (artifact)
+        uses: bridgecrewio/checkov-action@v12
+        continue-on-error: true
+        with:
+          directory: .
+          framework: terraform,kubernetes,helm,dockerfile
+          output_format: cli
+          output_file_path: checkov.output
+          download_external_modules: true
+          soft_fail: true
+ 
+      - name: Upload Trivy artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy.output
+          path: trivy.output
+          if-no-files-found: warn
+          retention-days: 14
+ 
+      - name: Upload Checkov artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov.output
+          path: checkov.output
+          if-no-files-found: warn
+          retention-days: 14
+ 
+      # -----------------------------------------
+      # 🚦 Gating scans (SARIF -> Code Scanning, fail on HIGH/CRITICAL)
+      # -----------------------------------------
+ 
+      - name: Trivy FS (SARIF, gated)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          scanners: vuln,secret,misconfig,license
+ 
+      - name: Upload Trivy FS SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+ 
+      - name: Trivy Image (SARIF, gated)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
+          format: sarif
+          output: trivy-image.sarif
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          scanners: vuln,secret,misconfig,license
+ 
+      - name: Upload Trivy Image SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+ 
+      - name: Checkov (SARIF, gated)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform,kubernetes,helm,dockerfile
+          output_format: sarif
+          output_file_path: checkov.sarif
+          download_external_modules: true
+          soft_fail: false
+ 
+      - name: Upload Checkov SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov.sarif
+          category: checkov
+ 
+      # -----------------------------------------
+      # Push & Deploy (only reached if gated scans pass)
+      # -----------------------------------------
       - name: Push Docker Image
         run: |
           docker push "$IMAGE_REPO:$IMAGE_TAG"
           docker push "$IMAGE_REPO:latest"
-
+ 
       - name: Get GKE Credentials
         run: gcloud container clusters get-credentials "$CLUSTER_NAME" --region "$LOCATION" --project "$PROJECT_ID"
-
-      # ✅ Apply manifest with the SHA-tag injected to avoid reverting to ':latest'
+ 
       - name: Deploy to GKE
         shell: bash
         run: |
           set -e
-
           echo "Using image: $IMAGE_NAME"
-
-          # Replace the image inline and apply (doesn't modify your file on disk)
-          # Assumes your deployment YAML has a single nginx container image line.
           sed -e "s|image: .*gke-docker-repo/nginx-simple-app:.*|image: $IMAGE_NAME|g" k8s-app-deployment.yaml | kubectl apply -f -
-
-          # Wait for rollout
           if ! kubectl rollout status deployment/nginx-simple-app --timeout=5m; then
             echo "Rollout failed — collecting diagnostics..."
             kubectl get deploy/nginx-simple-app -o yaml || true
@@ -104,8 +217,7 @@ jobs:
             kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
             exit 1
           fi
-
-      # (Optional) Show the image actually running in the Pod
+ 
       - name: Verify running image
         run: |
           kubectl get pods -l app.kubernetes.io/name=nginx-simple-app -o jsonpath='{.items[0].spec.containers[0].image}{"\n"}'
