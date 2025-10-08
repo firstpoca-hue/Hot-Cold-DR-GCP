@@ -62,7 +62,7 @@ jobs:
 
       - name: Run Checkov (continue but mark as warning)
         id: checkov
-        continue-on-error: true # Allow the job to continue even if Checkov finds issues
+        continue-on-error: true
         run: |
           echo "🔍 Running Checkov..."
           checkov -d . --quiet --compact > checkov.output
@@ -174,7 +174,16 @@ jobs:
             exit $code
           fi
 
-      - name: Upload Plan Artifact
+      # NEW: Always upload the human-readable plan output (like Trivy/Checkov)
+      - name: Upload Plan Output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plan.output
+          path: ${{ env.WORKING_DIR }}/plan.txt
+
+      # EXISTING: Only upload the binary plan when changes exist
+      - name: Upload Plan Artifact (binary)
         if: ${{ steps.plan.outputs.has_changes == 'true' }}
         uses: actions/upload-artifact@v4
         with:
@@ -182,6 +191,21 @@ jobs:
           path: |
             tfplan.bin
             plan.txt
+
+      # NEW: Summary for the Plan step
+      - name: Summarize Plan Results
+        if: always()
+        run: |
+          echo "### 📋 Terraform Plan Summary" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.plan.outputs.has_changes }}" = "true" ]; then
+            echo "- **Changes Detected:** Yes" >> $GITHUB_STEP_SUMMARY
+            echo "- Uploaded artifacts: \`tfplan\` (tfplan.bin, plan.txt), \`plan.output\` (plan.txt)" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.plan.outputs.has_changes }}" = "false" ]; then
+            echo "- **Changes Detected:** No" >> $GITHUB_STEP_SUMMARY
+            echo "- Uploaded artifact: \`plan.output\` (plan.txt)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Plan completed with a non-standard status. Review the \`plan.output\` artifact." >> $GITHUB_STEP_SUMMARY
+          fi
 
 
   # -------------------------------
@@ -214,10 +238,36 @@ jobs:
           name: tfplan
           path: .
 
+      # UPDATED: Capture apply output to file (like Trivy/Checkov) when applying from saved plan
       - name: Terraform Apply (from plan)
         if: ${{ needs.plan.outputs.has_changes == 'true' }}
-        run: terraform apply -input=false -auto-approve tfplan.bin
+        run: |
+          terraform apply -input=false -auto-approve tfplan.bin | tee apply.output
 
+      # UPDATED: Capture apply output to file (like Trivy/Checkov) when forced
       - name: Terraform Apply (forced)
         if: ${{ inputs.force_apply && needs.plan.outputs.has_changes != 'true' }}
-        run: terraform apply -input=false -auto-approve -var-file="${{ env.TFVARS_PATH }}"
+        run: |
+          terraform apply -input=false -auto-approve -var-file="${{ env.TFVARS_PATH }}" | tee apply.output
+
+      # NEW: Always upload the apply output artifact
+      - name: Upload Apply Output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apply.output
+          path: ${{ env.WORKING_DIR }}/apply.output
+
+      # NEW: Summary for Apply
+      - name: Summarize Apply Results
+        if: always()
+        run: |
+          echo "### ✅ Terraform Apply Summary" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.plan.outputs.has_changes }}" = "true" ]; then
+            echo "- **Mode:** Apply from saved plan (tfplan.bin)" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ inputs.force_apply }}" = "true" ]; then
+            echo "- **Mode:** Forced apply with tfvars" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Mode:** Unknown (check logs)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- Uploaded artifact: \`apply.output\`" >> $GITHUB_STEP_SUMMARY
