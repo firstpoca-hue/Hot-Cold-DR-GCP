@@ -1,4 +1,4 @@
-name: Terraform Destroy (GCS backend)
+name: Terraform-Destroy-Infra
 
 on:
   workflow_dispatch:
