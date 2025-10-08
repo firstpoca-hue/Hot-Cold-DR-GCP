@@ -1,4 +1,4 @@
-name: Provision Cold Cluster (on-demand)
+name: Provision-COLD(secondary)-Infra
 
 on:
   repository_dispatch:
