@@ -62,20 +62,16 @@ jobs:
 
       - name: Run Checkov (continue but mark as warning)
         id: checkov
+        continue-on-error: true # Allow the job to continue even if Checkov finds issues
         run: |
-          set +e
           echo "🔍 Running Checkov..."
           checkov -d . --quiet --compact > checkov.output
-          exit_code=$?
-          set -e
-
-          if [ $exit_code -ne 0 ]; then
-            echo "⚠️ Checkov found policy violations — marking job as warning."
+          if [ $? -ne 0 ]; then
+            echo "⚠️ Checkov found policy violations — continuing pipeline..."
             exit 78
           else
             echo "✅ Checkov passed without issues."
           fi
-            continue-on-error: true
 
       - name: Upload Checkov Output
         if: always()
@@ -106,14 +102,11 @@ jobs:
 
       - name: Run Trivy (continue but mark as warning)
         id: trivy
+        continue-on-error: true
         run: |
-          set +e
           echo "🔍 Running Trivy..."
           docker run --rm -v $PWD:/scan aquasec/trivy fs --severity HIGH,CRITICAL /scan > trivy.output
-          exit_code=$?
-          set -e
-
-          if [ $exit_code -ne 0 ]; then
+          if [ $? -ne 0 ]; then
             echo "⚠️ Trivy found vulnerabilities — marking job as warning."
             exit 78
           else
@@ -203,27 +196,4 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-
-      - name: Google Auth
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Terraform Init
-        run: terraform init -reconfigure
-
-      - name: Download Plan Artifact
-        if: ${{ needs.plan.outputs.has_changes == 'true' }}
-        uses: actions/download-artifact@v4
-        with:
-          name: tfplan
-          path: .
-
-      - name: Terraform Apply (from plan)
-        if: ${{ needs.plan.outputs.has_changes == 'true' }}
-        run: terraform apply -input=false -auto-approve tfplan.bin
-
-      - name: Terraform Apply (forced)
-        if: ${{ inputs.force_apply && needs.plan.outputs.has_changes != 'true' }}
-        run: terraform apply -input=false -auto-approve -var-file="${{ env.TFVARS_PATH }}"
+      - uses: hashicorp/setup-terraform
