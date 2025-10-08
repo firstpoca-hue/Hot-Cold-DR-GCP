@@ -127,6 +127,7 @@ jobs:
           echo "⚠️ Completed with potential vulnerabilities (review trivy.output artifact)" >> $GITHUB_STEP_SUMMARY
 
 
+
   # -------------------------------
   # 4️⃣ Terraform Plan
   # -------------------------------
@@ -196,4 +197,27 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Terraform Init
+        run: terraform init -reconfigure
+
+      - name: Download Plan Artifact
+        if: ${{ needs.plan.outputs.has_changes == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: .
+
+      - name: Terraform Apply (from plan)
+        if: ${{ needs.plan.outputs.has_changes == 'true' }}
+        run: terraform apply -input=false -auto-approve tfplan.bin
+
+      - name: Terraform Apply (forced)
+        if: ${{ inputs.force_apply && needs.plan.outputs.has_changes != 'true' }}
+        run: terraform apply -input=false -auto-approve -var-file="${{ env.TFVARS_PATH }}"
