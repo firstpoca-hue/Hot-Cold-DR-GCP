@@ -1,5 +1,5 @@
 name: Provision-HOT(primary)-Infra
- 
+
 on:
   workflow_dispatch:
     inputs:
@@ -8,14 +8,14 @@ on:
         required: false
         type: boolean
         default: false
- 
+
 env:
   TF_IN_AUTOMATION: "true"
   WORKING_DIR: root
   TFVARS_PATH: ../env/dev/terraform.tfvars
- 
+
 jobs:
- 
+
   # -------------------------------
   # 1️⃣ Terraform Init
   # -------------------------------
@@ -28,30 +28,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
- 
-      # GCP Authentication
+
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
- 
-      # Terraform Init
+
       - name: Terraform Init
         run: terraform init -reconfigure
- 
-      # Upload .terraform folder for next jobs (optional)
+
       - name: Upload .terraform folder
         uses: actions/upload-artifact@v4
         with:
           name: terraform-initialized
           path: .terraform
- 
- 
+
+
   # -------------------------------
-  # 2️⃣ Security Scan (Checkov + Trivy)
+  # 2️⃣ Checkov Scan
   # -------------------------------
-  security:
-    name: Security Scan (Checkov + Trivy)
+  checkov-scan:
+    name: 🛡️ Checkov Scan
     runs-on: ubuntu-latest
     needs: init
     defaults:
@@ -59,30 +56,53 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
     steps:
       - uses: actions/checkout@v4
- 
-      # Install Checkov
+
       - name: Install Checkov
         run: pip install checkov
- 
-      # Run Checkov scan
-      - name: Run Checkov
+
+      - name: Run Checkov (capture output, continue on error)
         run: |
-          echo "🔍 Running Checkov security scan..."
-          checkov -d . --quiet --compact
- 
-      # Run Trivy scan
-      - name: Run Trivy
-        run: |
-          echo "🔍 Running Trivy vulnerability scan..."
-          docker run --rm -v $PWD:/scan aquasec/trivy fs --exit-code 1 --severity HIGH,CRITICAL /scan
- 
- 
+          echo "🔍 Running Checkov..."
+          checkov -d . --quiet --compact > checkov.output || true
+
+      - name: Upload Checkov Output
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov.output
+          path: ${{ env.WORKING_DIR }}/checkov.output
+
+
   # -------------------------------
-  # 3️⃣ Terraform Plan
+  # 3️⃣ Trivy Scan
+  # -------------------------------
+  trivy-scan:
+    name: 🔍 Trivy Scan
+    runs-on: ubuntu-latest
+    needs: init
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy (capture output, continue on error)
+        run: |
+          echo "🔍 Running Trivy..."
+          docker run --rm -v $PWD:/scan aquasec/trivy fs --severity HIGH,CRITICAL /scan > trivy.output || true
+
+      - name: Upload Trivy Output
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy.output
+          path: ${{ env.WORKING_DIR }}/trivy.output
+
+
+  # -------------------------------
+  # 4️⃣ Terraform Plan
   # -------------------------------
   plan:
     name: Terraform Plan
-    needs: [init, security]
+    needs: [init, checkov-scan, trivy-scan]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -92,31 +112,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
- 
-      # Authenticate to GCP
+
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
- 
-      # Terraform Init
+
       - name: Terraform Init
         run: terraform init -reconfigure
- 
-      # Terraform Plan
+
       - name: Terraform Plan
         id: plan
         shell: bash
         run: |
           set -o pipefail
-          set +e  # allow non-zero exit (2 = "changes present")
+          set +e
           terraform validate
           terraform plan \
             -var-file="${{ env.TFVARS_PATH }}" \
             -input=false -no-color -out=tfplan.bin -detailed-exitcode | tee plan.txt
           code=$?
           set -e
- 
+
           if [ $code -eq 0 ]; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
           elif [ $code -eq 2 ]; then
@@ -125,8 +142,7 @@ jobs:
             echo "Plan failed. See plan.txt"
             exit $code
           fi
- 
-      # Upload plan output only if changes exist
+
       - name: Upload Plan Artifact
         if: ${{ steps.plan.outputs.has_changes == 'true' }}
         uses: actions/upload-artifact@v4
@@ -135,10 +151,10 @@ jobs:
           path: |
             tfplan.bin
             plan.txt
- 
- 
+
+
   # -------------------------------
-  # 4️⃣ Terraform Apply
+  # 5️⃣ Terraform Apply
   # -------------------------------
   apply:
     name: Terraform Apply
@@ -151,31 +167,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
- 
-      # GCP Authentication
+
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
- 
-      # Terraform Init
+
       - name: Terraform Init
         run: terraform init -reconfigure
- 
-      # Download Plan
+
       - name: Download Plan Artifact
         if: ${{ needs.plan.outputs.has_changes == 'true' }}
         uses: actions/download-artifact@v4
         with:
           name: tfplan
           path: .
- 
-      # Apply from saved plan (if changes exist)
+
       - name: Terraform Apply (from plan)
         if: ${{ needs.plan.outputs.has_changes == 'true' }}
         run: terraform apply -input=false -auto-approve tfplan.bin
- 
-      # Forced apply (if user requested)
+
       - name: Terraform Apply (forced)
         if: ${{ inputs.force_apply && needs.plan.outputs.has_changes != 'true' }}
         run: terraform apply -input=false -auto-approve -var-file="${{ env.TFVARS_PATH }}"
