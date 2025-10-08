@@ -60,16 +60,34 @@ jobs:
       - name: Install Checkov
         run: pip install checkov
 
-      - name: Run Checkov (capture output, continue on error)
+      - name: Run Checkov (continue but mark as warning)
+        id: checkov
         run: |
+          set +e
           echo "🔍 Running Checkov..."
-          checkov -d . --quiet --compact > checkov.output || true
+          checkov -d . --quiet --compact > checkov.output
+          exit_code=$?
+          set -e
+
+          if [ $exit_code -ne 0 ]; then
+            echo "⚠️ Checkov found policy violations — marking job as warning."
+            exit 78
+          else
+            echo "✅ Checkov passed without issues."
+          fi
 
       - name: Upload Checkov Output
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: checkov.output
           path: ${{ env.WORKING_DIR }}/checkov.output
+
+      - name: Summarize Checkov Results
+        if: always()
+        run: |
+          echo "### 🛡️ Checkov Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ Completed with potential policy violations (review checkov.output artifact)" >> $GITHUB_STEP_SUMMARY
 
 
   # -------------------------------
@@ -85,16 +103,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run Trivy (capture output, continue on error)
+      - name: Run Trivy (continue but mark as warning)
+        id: trivy
         run: |
+          set +e
           echo "🔍 Running Trivy..."
-          docker run --rm -v $PWD:/scan aquasec/trivy fs --severity HIGH,CRITICAL /scan > trivy.output || true
+          docker run --rm -v $PWD:/scan aquasec/trivy fs --severity HIGH,CRITICAL /scan > trivy.output
+          exit_code=$?
+          set -e
+
+          if [ $exit_code -ne 0 ]; then
+            echo "⚠️ Trivy found vulnerabilities — marking job as warning."
+            exit 78
+          else
+            echo "✅ Trivy scan passed without critical findings."
+          fi
 
       - name: Upload Trivy Output
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: trivy.output
           path: ${{ env.WORKING_DIR }}/trivy.output
+
+      - name: Summarize Trivy Results
+        if: always()
+        run: |
+          echo "### 🔍 Trivy Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ Completed with potential vulnerabilities (review trivy.output artifact)" >> $GITHUB_STEP_SUMMARY
 
 
   # -------------------------------
