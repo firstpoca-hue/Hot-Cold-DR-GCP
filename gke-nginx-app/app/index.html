@@ -1,10 +1,69 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
-    <title>Hello GKE</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Team RSAV</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100vh;
+        font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        background: linear-gradient(135deg, #007bff, #00c6ff);
+        color: white;
+      }
+
+      h1 {
+        font-size: 2.8rem;
+        margin-bottom: 10px;
+      }
+
+      p {
+        font-size: 1.2rem;
+        max-width: 600px;
+        line-height: 1.6;
+      }
+
+      .card {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 12px;
+        padding: 40px 50px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(10px);
+      }
+
+      footer {
+        position: absolute;
+        bottom: 20px;
+        font-size: 0.9rem;
+        opacity: 0.8;
+      }
+
+      footer a {
+        color: #fff;
+        text-decoration: none;
+      }
+
+      footer a:hover {
+        text-decoration: underline;
+      }
+    </style>
   </head>
-  <body style="font-family:sans-serif; text-align:center; margin-top:100px;">
-    <h1>🚀 Hello from Nginx on GKE!</h1>
-    <p>This is a lightweight static site running inside your cluster.</p>
+  <body>
+    <div class="card">
+      <h1>Team RSAV</h1>
+      <p>Welcome to your static website hosted on Google Kubernetes Engine using Nginx.</p>
+      <p>Containerized • Scalable • Cloud Native</p>
+    </div>
+
+    <footer>
+      <p>Made with ❤️ by <a href="#">Team RSAV</a> | Running on <b>GKE</b></p>
+    </footer>
   </body>
 </html>
