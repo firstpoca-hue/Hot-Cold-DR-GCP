@@ -19,6 +19,7 @@ jobs:
     defaults:
       run:
         working-directory: ${{ github.workspace }}
+
     steps:
       # 1️⃣ Checkout repo
       - uses: actions/checkout@v4
@@ -33,6 +34,74 @@ jobs:
       - name: Set GCP project
         run: gcloud config set project $PROJECT_ID
 
+      # -------------------------------
+      # 🛡️ Checkov (IaC) — non-blocking
+      # -------------------------------
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Run Checkov (continue, mark as warning)
+        id: checkov
+        shell: bash
+        continue-on-error: true
+        run: |
+          echo "🔍 Running Checkov..."
+          checkov -d . --quiet --compact > checkov.output
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo "⚠️ Checkov found policy violations — continuing pipeline..."
+            # exit 78 makes the step neutral when continue-on-error is true
+            exit 78
+          else
+            echo "✅ Checkov passed without issues."
+          fi
+
+      - name: Upload Checkov Output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov.output
+          path: ${{ github.workspace }}/checkov.output
+
+      - name: Summarize Checkov Results
+        if: always()
+        run: |
+          echo "### 🛡️ Checkov Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Artifact: \`checkov.output\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: Completed (review artifact for details)" >> $GITHUB_STEP_SUMMARY
+
+      # -------------------------------------------
+      # 🔍 Trivy (filesystem) — pre-build, non-blocking
+      # -------------------------------------------
+      - name: Trivy FS Scan (continue, mark as warning)
+        id: trivy-fs
+        shell: bash
+        continue-on-error: true
+        run: |
+          echo "🔍 Running Trivy filesystem scan..."
+          docker run --rm -v "$PWD":/scan aquasec/trivy fs --severity HIGH,CRITICAL /scan > trivy-fs.output
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo "⚠️ Trivy FS found vulnerabilities — continuing pipeline..."
+            exit 78
+          else
+            echo "✅ Trivy FS scan passed without critical findings."
+          fi
+
+      - name: Upload Trivy FS Output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs.output
+          path: ${{ github.workspace }}/trivy-fs.output
+
+      - name: Summarize Trivy FS Results
+        if: always()
+        run: |
+          echo "### 🔎 Trivy Filesystem Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Artifact: \`trivy-fs.output\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: Completed (review artifact for details)" >> $GITHUB_STEP_SUMMARY
+
       # 4️⃣ Configure Docker for Artifact Registry
       - name: Configure Docker
         run: gcloud auth configure-docker us-docker.pkg.dev --quiet
@@ -40,6 +109,40 @@ jobs:
       # 5️⃣ Build Docker image
       - name: Build Docker Image
         run: docker build -t $IMAGE_NAME .
+
+      # ---------------------------------------------------
+      # 🔍 Trivy (image) — post-build, pre-push, non-blocking
+      # ---------------------------------------------------
+      - name: Trivy Image Scan (continue, mark as warning)
+        id: trivy-image
+        shell: bash
+        continue-on-error: true
+        run: |
+          echo "🔍 Running Trivy image scan on $IMAGE_NAME..."
+          # Scan the locally built image
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --severity HIGH,CRITICAL "$IMAGE_NAME" > trivy-image.output
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo "⚠️ Trivy Image found vulnerabilities — continuing pipeline..."
+            exit 78
+          else
+            echo "✅ Trivy Image scan passed without critical findings."
+          fi
+
+      - name: Upload Trivy Image Output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image.output
+          path: ${{ github.workspace }}/trivy-image.output
+
+      - name: Summarize Trivy Image Results
+        if: always()
+        run: |
+          echo "### 🐳 Trivy Image Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: \`$IMAGE_NAME\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Artifact: \`trivy-image.output\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: Completed (review artifact for details)" >> $GITHUB_STEP_SUMMARY
 
       # 6️⃣ Push Docker image to Artifact Registry
       - name: Push Docker Image
@@ -49,7 +152,7 @@ jobs:
       - name: Get GKE Credentials
         run: gcloud container clusters get-credentials $CLUSTER_NAME --region $LOCATION --project $PROJECT_ID
 
-      # 8️⃣ Update Kubernetes deployment with new image
+      # 8️⃣ Deploy to GKE
       - name: Deploy to GKE
         run: |
           kubectl apply -f k8s-app-deployment.yaml
