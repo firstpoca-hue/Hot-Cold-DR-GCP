@@ -11,7 +11,12 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   LOCATION: us-central1
   CLUSTER_NAME: app-cluster-hot
-  IMAGE_NAME: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gke-docker-repo/nginx-simple-app:latest
+  # repo without tag
+  IMAGE_REPO: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gke-docker-repo/nginx-simple-app
+  # immutable tag per commit
+  IMAGE_TAG: ${{ github.sha }}
+  # full image reference used for deploy
+  IMAGE_NAME: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gke-docker-repo/nginx-simple-app:${{ github.sha }}
 
 jobs:
   build-and-deploy:
@@ -57,40 +62,50 @@ jobs:
             --member="serviceAccount:${NODE_SA}" \
             --role="roles/artifactregistry.reader" \
             --quiet
-          # Give IAM a brief moment to propagate to the nodes
-          sleep 30
-
-      # (Your Checkov/Trivy steps… unchanged)
+          sleep 10
 
       - name: Configure Docker (Artifact Registry)
         run: gcloud auth configure-docker us-docker.pkg.dev --quiet
 
+      # Build with both immutable tag and 'latest' (latest is optional)
       - name: Build Docker Image
-        run: docker build -t "$IMAGE_NAME" -f DockerFile .
+        run: |
+          docker build -t "$IMAGE_REPO:$IMAGE_TAG" -t "$IMAGE_REPO:latest" -f DockerFile .
 
       - name: Push Docker Image
-        run: docker push "$IMAGE_NAME"
+        run: |
+          docker push "$IMAGE_REPO:$IMAGE_TAG"
+          docker push "$IMAGE_REPO:latest"
 
       - name: Get GKE Credentials
         run: gcloud container clusters get-credentials "$CLUSTER_NAME" --region "$LOCATION" --project "$PROJECT_ID"
 
-      # ✅ Apply/Update and wait longer; then dump diagnostics if rollout fails
+      # ✅ Apply manifest with the SHA-tag injected to avoid reverting to ':latest'
       - name: Deploy to GKE
         shell: bash
         run: |
           set -e
-          kubectl apply -f k8s-app-deployment.yaml
-          kubectl set image deployment/nginx-simple-app nginx="$IMAGE_NAME"
-          # longer timeout to survive image pull + probe warmup
+
+          echo "Using image: $IMAGE_NAME"
+
+          # Replace the image inline and apply (doesn't modify your file on disk)
+          # Assumes your deployment YAML has a single nginx container image line.
+          sed -e "s|image: .*gke-docker-repo/nginx-simple-app:.*|image: $IMAGE_NAME|g" k8s-app-deployment.yaml | kubectl apply -f -
+
+          # Wait for rollout
           if ! kubectl rollout status deployment/nginx-simple-app --timeout=5m; then
             echo "Rollout failed — collecting diagnostics..."
             kubectl get deploy/nginx-simple-app -o yaml || true
             kubectl get rs -l app.kubernetes.io/name=nginx-simple-app -o wide || true
             kubectl get pods -l app.kubernetes.io/name=nginx-simple-app -o wide || true
-            # describe newest pod
             POD="$(kubectl get pods -l app.kubernetes.io/name=nginx-simple-app -o jsonpath='{.items[-1].metadata.name}')"
             kubectl describe pod "$POD" || true
             kubectl logs "$POD" --all-containers --tail=200 || true
             kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
             exit 1
           fi
+
+      # (Optional) Show the image actually running in the Pod
+      - name: Verify running image
+        run: |
+          kubectl get pods -l app.kubernetes.io/name=nginx-simple-app -o jsonpath='{.items[0].spec.containers[0].image}{"\n"}'
