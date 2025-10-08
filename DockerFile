@@ -1,3 +1,6 @@
 FROM nginx:alpine
-COPY app/index.html /usr/share/nginx/html/index.html
+
+# Copy the app's static files from your repo structure into Nginx's web root
+COPY gke-nginx-app/app/index.html /usr/share/nginx/html/index.html
+
 EXPOSE 80
