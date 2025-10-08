@@ -50,7 +50,6 @@ jobs:
           rc=$?
           if [ $rc -ne 0 ]; then
             echo "⚠️ Checkov found policy violations — continuing pipeline..."
-            # exit 78 makes the step neutral when continue-on-error is true
             exit 78
           else
             echo "✅ Checkov passed without issues."
@@ -106,9 +105,9 @@ jobs:
       - name: Configure Docker
         run: gcloud auth configure-docker us-docker.pkg.dev --quiet
 
-      # 5️⃣ Build Docker image
+      # 5️⃣ Build Docker image (use correct filename: DockerFile)
       - name: Build Docker Image
-        run: docker build -t $IMAGE_NAME .
+        run: docker build -t $IMAGE_NAME -f DockerFile .
 
       # ---------------------------------------------------
       # 🔍 Trivy (image) — post-build, pre-push, non-blocking
@@ -119,7 +118,6 @@ jobs:
         continue-on-error: true
         run: |
           echo "🔍 Running Trivy image scan on $IMAGE_NAME..."
-          # Scan the locally built image
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --severity HIGH,CRITICAL "$IMAGE_NAME" > trivy-image.output
           rc=$?
           if [ $rc -ne 0 ]; then
