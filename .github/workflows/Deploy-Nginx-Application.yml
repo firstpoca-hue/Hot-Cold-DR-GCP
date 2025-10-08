@@ -1,4 +1,4 @@
-name: Deploy GKE Nginx App
+name: Deploy-Nginx-Application
 
 on:
   workflow_dispatch:
