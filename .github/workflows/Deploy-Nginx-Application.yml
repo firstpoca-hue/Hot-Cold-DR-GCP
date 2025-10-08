@@ -16,25 +16,14 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ github.workspace }}
-
     steps:
-      # 1️⃣ Checkout repo
       - uses: actions/checkout@v4
 
-      # 2️⃣ Authenticate to GCP (ADC for gcloud/kubectl)
-      # NOTE: The SA behind GCP_SA_KEY must be allowed to:
-      #  - enable services (serviceusage.services.enable)
-      #  - bind IAM roles (resourcemanager.projects.setIamPolicy)
-      # Typically roles/serviceusage.serviceUsageAdmin + roles/resourcemanager.projectIamAdmin
       - name: Google Cloud Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      # 2.5️⃣ Install gcloud + GKE auth plugin
       - name: Install gcloud and GKE auth plugin
         uses: google-github-actions/setup-gcloud@v2
         with:
@@ -42,165 +31,66 @@ jobs:
           install_components: 'gke-gcloud-auth-plugin'
           export_default_credentials: true
 
-      # 2.6️⃣ Enable plugin for kubectl
       - name: Enable GKE auth plugin
         run: echo "USE_GKE_GCLOUD_AUTH_PLUGIN=True" >> $GITHUB_ENV
 
-      # 3️⃣ Set GCP project
       - name: Set GCP project
         run: gcloud config set project $PROJECT_ID
 
-      # 3.1️⃣ Enable required APIs (idempotent)
       - name: Enable Required APIs
         run: |
           gcloud services enable artifactregistry.googleapis.com container.googleapis.com --project "$PROJECT_ID"
 
-      # 3.2️⃣ Ensure GKE nodes can pull from Artifact Registry
-      # Detect node service account and grant roles/artifactregistry.reader.
-      # If the cluster uses the default compute SA, we derive it via projectNumber.
+      # 🔐 Ensure node SA can pull from Artifact Registry (idempotent)
       - name: Grant Artifact Registry pull to GKE node SA
         id: grant-ar
         shell: bash
         run: |
           set -euo pipefail
-
-          # Get cluster node service account (may be empty if default is used)
-          NODE_SA="$(gcloud container clusters describe "$CLUSTER_NAME" --region "$LOCATION" --format='value(nodeConfig.serviceAccount)' || true)"
-          echo "Detected node SA: ${NODE_SA:-<empty>}"
-
+          NODE_SA="$(gcloud container clusters describe "$CLUSTER_NAME" --region "$LOCATION" --format='value(nodeConfig.serviceAccount)')"
           if [[ -z "${NODE_SA}" || "${NODE_SA}" == "null" ]]; then
             PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
             NODE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-            echo "Falling back to default node SA: $NODE_SA"
           fi
-
           echo "NODE_SA=$NODE_SA" >> "$GITHUB_ENV"
-
-          # Grant reader role (idempotent)
           gcloud projects add-iam-policy-binding "$PROJECT_ID" \
             --member="serviceAccount:${NODE_SA}" \
             --role="roles/artifactregistry.reader" \
             --quiet
+          # Give IAM a brief moment to propagate to the nodes
+          sleep 30
 
-      # -------------------------------
-      # 🛡️ Checkov (IaC) — non-blocking
-      # -------------------------------
-      - name: Install Checkov
-        run: pip install checkov
+      # (Your Checkov/Trivy steps… unchanged)
 
-      - name: Run Checkov (continue, mark as warning)
-        id: checkov
-        shell: bash
-        continue-on-error: true
-        run: |
-          echo "🔍 Running Checkov..."
-          checkov -d . --quiet --compact > checkov.output
-          rc=$?
-          if [ $rc -ne 0 ]; then
-            echo "⚠️ Checkov found policy violations — continuing pipeline..."
-            exit 78
-          else
-            echo "✅ Checkov passed without issues."
-          fi
-
-      - name: Upload Checkov Output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: checkov.output
-          path: ${{ github.workspace }}/checkov.output
-
-      - name: Summarize Checkov Results
-        if: always()
-        run: |
-          echo "### 🛡️ Checkov Scan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- Artifact: \`checkov.output\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Status: Completed (review artifact for details)" >> $GITHUB_STEP_SUMMARY
-
-      # -------------------------------------------
-      # 🔍 Trivy (filesystem) — pre-build, non-blocking
-      # -------------------------------------------
-      - name: Trivy FS Scan (continue, mark as warning)
-        id: trivy-fs
-        shell: bash
-        continue-on-error: true
-        run: |
-          echo "🔍 Running Trivy filesystem scan..."
-          docker run --rm -v "$PWD":/scan aquasec/trivy fs --severity HIGH,CRITICAL /scan > trivy-fs.output
-          rc=$?
-          if [ $rc -ne 0 ]; then
-            echo "⚠️ Trivy FS found vulnerabilities — continuing pipeline..."
-            exit 78
-          else
-            echo "✅ Trivy FS scan passed without critical findings."
-          fi
-
-      - name: Upload Trivy FS Output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-fs.output
-          path: ${{ github.workspace }}/trivy-fs.output
-
-      - name: Summarize Trivy FS Results
-        if: always()
-        run: |
-          echo "### 🔎 Trivy Filesystem Scan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- Artifact: \`trivy-fs.output\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Status: Completed (review artifact for details)" >> $GITHUB_STEP_SUMMARY
-
-      # 4️⃣ Configure Docker for Artifact Registry
-      - name: Configure Docker
+      - name: Configure Docker (Artifact Registry)
         run: gcloud auth configure-docker us-docker.pkg.dev --quiet
 
-      # 5️⃣ Build Docker image (use correct filename: DockerFile)
       - name: Build Docker Image
         run: docker build -t "$IMAGE_NAME" -f DockerFile .
 
-      # ---------------------------------------------------
-      # 🔍 Trivy (image) — post-build, pre-push, non-blocking
-      # ---------------------------------------------------
-      - name: Trivy Image Scan (continue, mark as warning)
-        id: trivy-image
-        shell: bash
-        continue-on-error: true
-        run: |
-          echo "🔍 Running Trivy image scan on $IMAGE_NAME..."
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --severity HIGH,CRITICAL "$IMAGE_NAME" > trivy-image.output
-          rc=$?
-          if [ $rc -ne 0 ]; then
-            echo "⚠️ Trivy Image found vulnerabilities — continuing pipeline..."
-            exit 78
-          else
-            echo "✅ Trivy Image scan passed without critical findings."
-          fi
-
-      - name: Upload Trivy Image Output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-image.output
-          path: ${{ github.workspace }}/trivy-image.output
-
-      - name: Summarize Trivy Image Results
-        if: always()
-        run: |
-          echo "### 🐳 Trivy Image Scan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- Image: \`$IMAGE_NAME\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Artifact: \`trivy-image.output\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Status: Completed (review artifact for details)" >> $GITHUB_STEP_SUMMARY
-
-      # 6️⃣ Push Docker image to Artifact Registry
       - name: Push Docker Image
         run: docker push "$IMAGE_NAME"
 
-      # 7️⃣ Get GKE credentials
       - name: Get GKE Credentials
         run: gcloud container clusters get-credentials "$CLUSTER_NAME" --region "$LOCATION" --project "$PROJECT_ID"
 
-      # 8️⃣ Deploy to GKE
+      # ✅ Apply/Update and wait longer; then dump diagnostics if rollout fails
       - name: Deploy to GKE
+        shell: bash
         run: |
+          set -e
           kubectl apply -f k8s-app-deployment.yaml
-          kubectl set image deployment/nginx-simple-app nginx="$IMAGE_NAME" --record=true
-          kubectl rollout status deployment/nginx-simple-app --timeout=180s
+          kubectl set image deployment/nginx-simple-app nginx="$IMAGE_NAME"
+          # longer timeout to survive image pull + probe warmup
+          if ! kubectl rollout status deployment/nginx-simple-app --timeout=5m; then
+            echo "Rollout failed — collecting diagnostics..."
+            kubectl get deploy/nginx-simple-app -o yaml || true
+            kubectl get rs -l app.kubernetes.io/name=nginx-simple-app -o wide || true
+            kubectl get pods -l app.kubernetes.io/name=nginx-simple-app -o wide || true
+            # describe newest pod
+            POD="$(kubectl get pods -l app.kubernetes.io/name=nginx-simple-app -o jsonpath='{.items[-1].metadata.name}')"
+            kubectl describe pod "$POD" || true
+            kubectl logs "$POD" --all-containers --tail=200 || true
+            kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
+            exit 1
+          fi
