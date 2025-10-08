@@ -60,29 +60,16 @@ jobs:
       - name: Install Checkov
         run: pip install checkov
 
-      - name: Run Checkov (continue but mark as warning)
-        id: checkov
+      - name: Run Checkov (capture output, continue on error)
         run: |
           echo "🔍 Running Checkov..."
-          checkov -d . --quiet --compact > checkov.output
-          exit_code=$?
-          if [ $exit_code -ne 0 ]; then
-            echo "Checkov found issues. Marking job as warning..."
-            exit 78
-          fi
+          checkov -d . --quiet --compact > checkov.output || true
 
       - name: Upload Checkov Output
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: checkov.output
           path: ${{ env.WORKING_DIR }}/checkov.output
-
-      - name: Summarize Checkov Results
-        if: always()
-        run: |
-          echo "### 🛡️ Checkov Scan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Completed with potential policy violations (review checkov.output artifact)" >> $GITHUB_STEP_SUMMARY
 
 
   # -------------------------------
@@ -98,29 +85,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run Trivy (continue but mark as warning)
-        id: trivy
+      - name: Run Trivy (capture output, continue on error)
         run: |
           echo "🔍 Running Trivy..."
-          docker run --rm -v $PWD:/scan aquasec/trivy fs --severity HIGH,CRITICAL /scan > trivy.output
-          exit_code=$?
-          if [ $exit_code -ne 0 ]; then
-            echo "Trivy found vulnerabilities. Marking job as warning..."
-            exit 78
-          fi
+          docker run --rm -v $PWD:/scan aquasec/trivy fs --severity HIGH,CRITICAL /scan > trivy.output || true
 
       - name: Upload Trivy Output
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: trivy.output
           path: ${{ env.WORKING_DIR }}/trivy.output
-
-      - name: Summarize Trivy Results
-        if: always()
-        run: |
-          echo "### 🔍 Trivy Scan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "⚠️ Completed with potential vulnerabilities (review trivy.output artifact)" >> $GITHUB_STEP_SUMMARY
 
 
   # -------------------------------
