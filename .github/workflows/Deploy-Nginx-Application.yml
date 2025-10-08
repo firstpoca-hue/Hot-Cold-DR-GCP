@@ -24,26 +24,63 @@ jobs:
       # 1️⃣ Checkout repo
       - uses: actions/checkout@v4
 
-      # 2️⃣ Authenticate to GCP (sets ADC for gcloud/kubectl)
+      # 2️⃣ Authenticate to GCP (ADC for gcloud/kubectl)
+      # NOTE: The SA behind GCP_SA_KEY must be allowed to:
+      #  - enable services (serviceusage.services.enable)
+      #  - bind IAM roles (resourcemanager.projects.setIamPolicy)
+      # Typically roles/serviceusage.serviceUsageAdmin + roles/resourcemanager.projectIamAdmin
       - name: Google Cloud Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      # 2.5️⃣ Install gcloud + GKE auth plugin (NEW)
+      # 2.5️⃣ Install gcloud + GKE auth plugin
       - name: Install gcloud and GKE auth plugin
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
           install_components: 'gke-gcloud-auth-plugin'
+          export_default_credentials: true
 
-      # 2.6️⃣ Enable plugin for kubectl (NEW)
+      # 2.6️⃣ Enable plugin for kubectl
       - name: Enable GKE auth plugin
         run: echo "USE_GKE_GCLOUD_AUTH_PLUGIN=True" >> $GITHUB_ENV
 
       # 3️⃣ Set GCP project
       - name: Set GCP project
         run: gcloud config set project $PROJECT_ID
+
+      # 3.1️⃣ Enable required APIs (idempotent)
+      - name: Enable Required APIs
+        run: |
+          gcloud services enable artifactregistry.googleapis.com container.googleapis.com --project "$PROJECT_ID"
+
+      # 3.2️⃣ Ensure GKE nodes can pull from Artifact Registry
+      # Detect node service account and grant roles/artifactregistry.reader.
+      # If the cluster uses the default compute SA, we derive it via projectNumber.
+      - name: Grant Artifact Registry pull to GKE node SA
+        id: grant-ar
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Get cluster node service account (may be empty if default is used)
+          NODE_SA="$(gcloud container clusters describe "$CLUSTER_NAME" --region "$LOCATION" --format='value(nodeConfig.serviceAccount)' || true)"
+          echo "Detected node SA: ${NODE_SA:-<empty>}"
+
+          if [[ -z "${NODE_SA}" || "${NODE_SA}" == "null" ]]; then
+            PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+            NODE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+            echo "Falling back to default node SA: $NODE_SA"
+          fi
+
+          echo "NODE_SA=$NODE_SA" >> "$GITHUB_ENV"
+
+          # Grant reader role (idempotent)
+          gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+            --member="serviceAccount:${NODE_SA}" \
+            --role="roles/artifactregistry.reader" \
+            --quiet
 
       # -------------------------------
       # 🛡️ Checkov (IaC) — non-blocking
@@ -118,7 +155,7 @@ jobs:
 
       # 5️⃣ Build Docker image (use correct filename: DockerFile)
       - name: Build Docker Image
-        run: docker build -t $IMAGE_NAME -f DockerFile .
+        run: docker build -t "$IMAGE_NAME" -f DockerFile .
 
       # ---------------------------------------------------
       # 🔍 Trivy (image) — post-build, pre-push, non-blocking
@@ -155,15 +192,15 @@ jobs:
 
       # 6️⃣ Push Docker image to Artifact Registry
       - name: Push Docker Image
-        run: docker push $IMAGE_NAME
+        run: docker push "$IMAGE_NAME"
 
-      # 7️⃣ Get GKE credentials (now uses the plugin)
+      # 7️⃣ Get GKE credentials
       - name: Get GKE Credentials
-        run: gcloud container clusters get-credentials $CLUSTER_NAME --region $LOCATION --project $PROJECT_ID
+        run: gcloud container clusters get-credentials "$CLUSTER_NAME" --region "$LOCATION" --project "$PROJECT_ID"
 
       # 8️⃣ Deploy to GKE
       - name: Deploy to GKE
         run: |
           kubectl apply -f k8s-app-deployment.yaml
-          kubectl set image deployment/nginx-simple-app nginx=$IMAGE_NAME
-          kubectl rollout status deployment/nginx-simple-app
+          kubectl set image deployment/nginx-simple-app nginx="$IMAGE_NAME" --record=true
+          kubectl rollout status deployment/nginx-simple-app --timeout=180s
