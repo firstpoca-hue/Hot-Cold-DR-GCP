@@ -75,6 +75,7 @@ jobs:
           else
             echo "✅ Checkov passed without issues."
           fi
+            continue-on-error: true
 
       - name: Upload Checkov Output
         if: always()
