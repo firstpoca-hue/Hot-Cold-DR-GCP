@@ -1,13 +1,13 @@
 name: Deploy-Nginx-Application
- 
+
 on:
   workflow_dispatch:
- 
+
 permissions:
   contents: read
   id-token: write
   security-events: write   # for SARIF uploads
- 
+
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   LOCATION: us-central1
@@ -15,36 +15,36 @@ env:
   IMAGE_REPO: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gke-docker-repo/nginx-simple-app
   IMAGE_TAG: ${{ github.sha }}
   IMAGE_NAME: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gke-docker-repo/nginx-simple-app:${{ github.sha }}
- 
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
- 
+
     steps:
       - uses: actions/checkout@v4
- 
+
       - name: Google Cloud Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
- 
+
       - name: Install gcloud and GKE auth plugin
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
           install_components: 'gke-gcloud-auth-plugin'
           export_default_credentials: true
- 
+
       - name: Enable GKE auth plugin
         run: echo "USE_GKE_GCLOUD_AUTH_PLUGIN=True" >> $GITHUB_ENV
- 
+
       - name: Set GCP project
         run: gcloud config set project $PROJECT_ID
- 
+
       - name: Enable Required APIs
         run: |
           gcloud services enable artifactregistry.googleapis.com container.googleapis.com --project "$PROJECT_ID"
- 
+
       - name: Grant Artifact Registry pull to GKE node SA
         id: grant-ar
         shell: bash
@@ -61,14 +61,14 @@ jobs:
             --role="roles/artifactregistry.reader" \
             --quiet
           sleep 10
- 
+
       - name: Configure Docker (Artifact Registry)
         run: gcloud auth configure-docker us-docker.pkg.dev --quiet
- 
+
       # -----------------------------------------
-      # 🔎 Human-readable artifact scans (non-fatal)
+      # 🔎 Human-readable scans (non-fatal, artifact only)
       # -----------------------------------------
- 
+
       - name: Trivy FS (artifact)
         uses: aquasecurity/trivy-action@0.28.0
         continue-on-error: true
@@ -79,11 +79,11 @@ jobs:
           output: trivy-fs.txt
           exit-code: '0'
           scanners: vuln,secret,misconfig,license
- 
+
       - name: Build Docker Image
         run: |
           docker build -t "$IMAGE_REPO:$IMAGE_TAG" -t "$IMAGE_REPO:latest" -f DockerFile .
- 
+
       - name: Trivy Image (artifact)
         uses: aquasecurity/trivy-action@0.28.0
         continue-on-error: true
@@ -94,7 +94,7 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
           scanners: vuln,secret,misconfig,license
- 
+
       - name: Combine Trivy outputs -> trivy.output
         shell: bash
         run: |
@@ -105,7 +105,7 @@ jobs:
             echo "===== TRIVY IMAGE SCAN (${IMAGE_REPO}:${IMAGE_TAG}) ====="
             cat trivy-image.txt 2>/dev/null || true
           } > trivy.output
- 
+
       - name: Checkov (artifact)
         uses: bridgecrewio/checkov-action@v12
         continue-on-error: true
@@ -116,7 +116,7 @@ jobs:
           output_file_path: checkov.output
           download_external_modules: true
           soft_fail: true
- 
+
       - name: Upload Trivy artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -125,7 +125,7 @@ jobs:
           path: trivy.output
           if-no-files-found: warn
           retention-days: 14
- 
+
       - name: Upload Checkov artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -134,11 +134,11 @@ jobs:
           path: checkov.output
           if-no-files-found: warn
           retention-days: 14
- 
+
       # -----------------------------------------
-      # 🚦 Gating scans (SARIF -> Code Scanning, fail on HIGH/CRITICAL)
+      # 🚦 Gated scans (fail pipeline if HIGH/CRITICAL)
       # -----------------------------------------
- 
+
       - name: Trivy FS (SARIF, gated)
         uses: aquasecurity/trivy-action@0.28.0
         with:
@@ -149,13 +149,13 @@ jobs:
           exit-code: '1'
           severity: HIGH,CRITICAL
           scanners: vuln,secret,misconfig,license
- 
+
       - name: Upload Trivy FS SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
- 
+
       - name: Trivy Image (SARIF, gated)
         uses: aquasecurity/trivy-action@0.28.0
         with:
@@ -166,13 +166,13 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           scanners: vuln,secret,misconfig,license
- 
+
       - name: Upload Trivy Image SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
- 
+
       - name: Checkov (SARIF, gated)
         uses: bridgecrewio/checkov-action@v12
         with:
@@ -182,25 +182,29 @@ jobs:
           output_file_path: checkov.sarif
           download_external_modules: true
           soft_fail: false
- 
+
       - name: Upload Checkov SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: checkov.sarif
           category: checkov
- 
+
       # -----------------------------------------
-      # Push & Deploy (only reached if gated scans pass)
+      # ✅ Push & Deploy (only if scans passed)
       # -----------------------------------------
+
       - name: Push Docker Image
+        if: ${{ success() }}
         run: |
           docker push "$IMAGE_REPO:$IMAGE_TAG"
           docker push "$IMAGE_REPO:latest"
- 
+
       - name: Get GKE Credentials
+        if: ${{ success() }}
         run: gcloud container clusters get-credentials "$CLUSTER_NAME" --region "$LOCATION" --project "$PROJECT_ID"
- 
+
       - name: Deploy to GKE
+        if: ${{ success() }}
         shell: bash
         run: |
           set -e
@@ -217,7 +221,8 @@ jobs:
             kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
             exit 1
           fi
- 
+
       - name: Verify running image
+        if: ${{ success() }}
         run: |
           kubectl get pods -l app.kubernetes.io/name=nginx-simple-app -o jsonpath='{.items[0].spec.containers[0].image}{"\n"}'
