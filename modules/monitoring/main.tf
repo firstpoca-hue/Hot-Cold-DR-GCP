@@ -28,4 +28,5 @@ resource "google_monitoring_alert_policy" "cpu_alert" {
 resource "google_project_service" "monitoring" {
   project = var.project_id
   service = "monitoring.googleapis.com"
+  disable_on_destroy = false
 }

@@ -12,6 +12,7 @@ resource "google_project_service" "services" {
 
   project = var.project_id
   service = each.value
+  disable_on_destroy = false
 }
 
 # Artifact Registry (multi-region)
@@ -35,6 +36,7 @@ resource "google_service_account" "gke_primary" {
 
 # GKE Cluster
 resource "google_container_cluster" "primary_nodes" {
+  deletion_protection = false
   name     = var.cluster_name
   location = var.region
   initial_node_count = 1
@@ -50,7 +52,7 @@ resource "google_container_cluster" "primary_nodes" {
 
 resource "google_project_service" "logging" {
   service                     = "logging.googleapis.com"
-  disable_on_destroy           = true
+  disable_on_destroy           = false
   disable_dependent_services   = true
   project                     = var.project_id
 }
