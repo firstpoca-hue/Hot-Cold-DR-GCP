@@ -75,14 +75,13 @@ metadata:
   annotations:
     cloud.google.com/backend-config: '{"default":"nginx-cdn-backendconfig"}'
 spec:
-  type: NodePort
+  type: LoadBalancer   # ⬅️ Changed from NodePort → LoadBalancer
   selector:
     app.kubernetes.io/name: nginx-simple-app
   ports:
     - protocol: TCP
       port: 80
       targetPort: 80
-
 ---
 # ==========================================
 # 4. Ingress (creates Global LB + Cloud CDN)
