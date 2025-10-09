@@ -1,5 +1,5 @@
 # ==========================================
-# 1. Deployment (same as yours)
+# 1. Deployment (unchanged)
 # ==========================================
 apiVersion: apps/v1
 kind: Deployment
@@ -64,7 +64,7 @@ spec:
 
 ---
 # ==========================================
-# 3. Service (change LoadBalancer → NodePort)
+# 3. Service (NEG-enabled; use NodePort/ClusterIP for Ingress)
 # ==========================================
 apiVersion: v1
 kind: Service
@@ -74,17 +74,20 @@ metadata:
     app.kubernetes.io/name: nginx-simple-app
   annotations:
     cloud.google.com/backend-config: '{"default":"nginx-cdn-backendconfig"}'
+    cloud.google.com/neg: '{"ingress": true}'    # <-- REQUIRED for NEGs
 spec:
-  type: LoadBalancer   # ⬅️ Changed from NodePort → LoadBalancer
+  # Use NodePort or omit this field (ClusterIP). DO NOT use LoadBalancer here.
+  type: NodePort
   selector:
     app.kubernetes.io/name: nginx-simple-app
   ports:
     - protocol: TCP
       port: 80
       targetPort: 80
+
 ---
 # ==========================================
-# 4. Ingress (creates Global LB + Cloud CDN)
+# 4. Ingress (GCE Ingress -> Global HTTP(S) LB + Cloud CDN)
 # ==========================================
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -92,16 +95,16 @@ metadata:
   name: nginx-cdn-ingress
   annotations:
     kubernetes.io/ingress.class: "gce"
-    # Optional: reserve static IP first, then reference it here:
+    # Optional: use a reserved global IP to keep address stable:
     # kubernetes.io/ingress.global-static-ip-name: "nginx-cdn-ip"
 spec:
   rules:
-  - http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: nginx-simple-app-svc
-            port:
-              number: 80
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx-simple-app-svc
+                port:
+                  number: 80
