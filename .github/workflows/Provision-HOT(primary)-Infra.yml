@@ -208,12 +208,28 @@ jobs:
           fi
 
 
+  # ---------------------------
+  # ⏸️ MANUAL APPROVAL GATE
+  # ---------------------------
+  approval:
+    name: Await Manual Approval
+    runs-on: ubuntu-latest
+    # require the plan to be complete so reviewers can inspect the plan output/artifact
+    needs: plan
+    environment:
+      name: prod-approval
+    steps:
+      - name: Notify and wait for approval
+        run: echo "Pending manual approval in environment 'prod-approval'. Review the plan.output artifact before approving."
+
+
   # -------------------------------
   # 5️⃣ Terraform Apply
   # -------------------------------
   apply:
     name: Terraform Apply
-    needs: plan
+    # Ensure apply runs only after both plan (so outputs are available) and approval (manual gate)
+    needs: [plan, approval]
     if: ${{ inputs.force_apply || needs.plan.outputs.has_changes == 'true' }}
     runs-on: ubuntu-latest
     defaults:
