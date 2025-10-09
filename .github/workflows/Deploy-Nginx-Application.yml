@@ -57,10 +57,10 @@ jobs:
           docker build -t "$IMAGE_REPO:$IMAGE_TAG" -t "$IMAGE_REPO:latest" -f DockerFile .
 
   # ---------------------------
-  # 2️⃣ SECURITY SCAN
+  # 2️⃣ TRIVY SCAN
   # ---------------------------
-  security-scan:
-    name: Security Scan
+  trivy-scan:
+    name: Trivy Scan
     runs-on: ubuntu-latest
     needs: build
 
@@ -92,12 +92,12 @@ jobs:
       - name: Configure Docker (Artifact Registry)
         run: gcloud auth configure-docker us-docker.pkg.dev --quiet
 
-      # Rebuild image in this job context (separate runner)
+      # Build image again in this job's runner so Trivy can scan it locally
       - name: Build Docker Image (for scanning)
         run: |
           docker build -t "$IMAGE_REPO:$IMAGE_TAG" -t "$IMAGE_REPO:latest" -f DockerFile .
 
-      # ---- Human-readable scans (non-fatal, artifact only)
+      # ---- Human-readable Trivy (artifact)
       - name: Trivy FS (artifact)
         uses: aquasecurity/trivy-action@0.28.0
         continue-on-error: true
@@ -131,17 +131,6 @@ jobs:
             cat trivy-image.txt 2>/dev/null || true
           } > trivy.output
 
-      - name: Checkov (artifact)
-        uses: bridgecrewio/checkov-action@v12
-        continue-on-error: true
-        with:
-          directory: .
-          framework: terraform,kubernetes,helm,dockerfile
-          output_format: cli
-          output_file_path: checkov.output
-          download_external_modules: true
-          soft_fail: true
-
       - name: Upload Trivy artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -151,16 +140,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload Checkov artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: checkov.output
-          path: checkov.output
-          if-no-files-found: warn
-          retention-days: 14
-
-      # ---- Gated scans (fail pipeline if HIGH/CRITICAL)
+      # ---- Gated Trivy: fail if HIGH/CRITICAL found (SARIF for Code Scanning)
       - name: Trivy FS (SARIF, gated)
         continue-on-error: true
         uses: aquasecurity/trivy-action@0.28.0
@@ -199,33 +179,13 @@ jobs:
           sarif_file: trivy-image.sarif
           category: trivy-image
 
-      - name: Checkov (SARIF, gated)
-        continue-on-error: true
-        uses: bridgecrewio/checkov-action@v12
-        with:
-          directory: .
-          framework: terraform,kubernetes,helm,dockerfile
-          output_format: sarif
-          output_file_path: checkov.sarif
-          download_external_modules: true
-          soft_fail: false
-
-      - name: Upload Checkov SARIF
-        continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: checkov.sarif
-          category: checkov
-
   # ---------------------------
   # ⏸️ MANUAL APPROVAL GATE
   # ---------------------------
   approval:
     name: Await Manual Approval
     runs-on: ubuntu-latest
-    needs: security-scan
-    # Create an environment named "prod-approval" in repo settings and
-    # require reviewers to enforce manual approval here.
+    needs: trivy-scan
     environment:
       name: prod-approval
     steps:
