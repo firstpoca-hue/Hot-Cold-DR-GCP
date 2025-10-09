@@ -1,3 +1,6 @@
+# ==========================================
+# 1. Deployment (same as yours)
+# ==========================================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -44,18 +47,62 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 3
+
 ---
+# ==========================================
+# 2. BackendConfig (enables Cloud CDN)
+# ==========================================
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: nginx-cdn-backendconfig
+spec:
+  cdn:
+    enabled: true
+  connectionDraining:
+    drainingTimeoutSec: 0
+
+---
+# ==========================================
+# 3. Service (change LoadBalancer → NodePort)
+# ==========================================
 apiVersion: v1
 kind: Service
 metadata:
   name: nginx-simple-app-svc
   labels:
     app.kubernetes.io/name: nginx-simple-app
+  annotations:
+    cloud.google.com/backend-config: '{"default":"nginx-cdn-backendconfig"}'
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector:
     app.kubernetes.io/name: nginx-simple-app
   ports:
     - protocol: TCP
       port: 80
       targetPort: 80
+
+---
+# ==========================================
+# 4. Ingress (creates Global LB + Cloud CDN)
+# ==========================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-cdn-ingress
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    # Optional: reserve static IP first, then reference it here:
+    # kubernetes.io/ingress.global-static-ip-name: "nginx-cdn-ip"
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nginx-simple-app-svc
+            port:
+              number: 80
