@@ -74,15 +74,9 @@ metadata:
     app.kubernetes.io/name: nginx-simple-app
   annotations:
     cloud.google.com/backend-config: '{"default":"nginx-cdn-backendconfig"}'
-<<<<<<< HEAD
     cloud.google.com/neg: '{"ingress": true}'    # <-- REQUIRED for NEGs
 spec:
   # Use NodePort or omit this field (ClusterIP). DO NOT use LoadBalancer here.
-=======
-    cloud.google.com/neg: '{"ingress": true}'   # <-- REQUIRED
-spec:
-  # Use NodePort (or omit 'type' for ClusterIP). DO NOT use LoadBalancer here.
->>>>>>> bda7c1a9668f195400d086894925450d3c405fe8
   type: NodePort
   selector:
     app.kubernetes.io/name: nginx-simple-app
@@ -90,12 +84,6 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 80
-<<<<<<< HEAD
-=======
-      # optional: nodePort: 31061
-
-      # optional: nodePort: 31061
->>>>>>> bda7c1a9668f195400d086894925450d3c405fe8
 
 ---
 # ==========================================
