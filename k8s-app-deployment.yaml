@@ -1,137 +1,137 @@
-# ==========================================
-# 1) Deployment (apply to BOTH clusters)
-# ==========================================
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: nginx-simple-app
-  labels:
-    app.kubernetes.io/name: nginx-simple-app
-    app.kubernetes.io/part-of: nginx-simple-app
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: nginx-simple-app
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: nginx-simple-app
-    spec:
-      containers:
-        - name: nginx
-          image: us-docker.pkg.dev/hot-cold-drp/gke-docker-repo/nginx-simple-app:latest
-          imagePullPolicy: Always
-          ports:
-            - name: http
-              containerPort: 80
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "128Mi"
-            limits:
-              cpu: "200m"
-              memory: "256Mi"
-          readinessProbe:
-            httpGet:
-              path: "/"
-              port: 80
-            initialDelaySeconds: 5
-            periodSeconds: 10
-            timeoutSeconds: 2
-            failureThreshold: 3
-          livenessProbe:
-            httpGet:
-              path: "/"
-              port: 80
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            timeoutSeconds: 2
-            failureThreshold: 3
----
-# ==========================================
-# 2) BackendConfig (apply to BOTH clusters)
-#    Namespace must match the Service/derived Service
-# ==========================================
-apiVersion: cloud.google.com/v1
-kind: BackendConfig
-metadata:
-  name: nginx-cdn-backendconfig
-spec:
-  healthCheck:
-    type: HTTP
-    requestPath: "/"
-    port: 80
-    checkIntervalSec: 10
-    timeoutSec: 5
-    healthyThreshold: 1
-    unhealthyThreshold: 3
-  timeoutSec: 30
-  connectionDraining:
-    drainingTimeoutSec: 0
-  cdn:
-    enabled: true
-    cacheMode: CACHE_ALL_STATIC
-    defaultTtl: 3600s
-    maxTtl: 86400s
----
-# ==========================================
-# 3) MultiClusterService (apply ONLY to the config cluster)
-#    Creates derived Services in member clusters and attaches BackendConfig
-# ==========================================
-apiVersion: networking.gke.io/v1
-kind: MultiClusterService
-metadata:
-  name: nginx-simple-app-mcs
-  namespace: default
-  annotations:
-    cloud.google.com/backend-config: '{"ports": {"80":"nginx-cdn-backendconfig"}}'
-spec:
-  template:
-    spec:
-      selector:
-        app.kubernetes.io/name: nginx-simple-app
-      ports:
-        - name: http
-          protocol: TCP
-          port: 80
-          targetPort: 80
-  # Optional: explicitly list participating clusters (Fleet links)
-  # clusters:
-  # - link: "us-central1-b/cluster-a"
-  # - link: "asia-south1-a/cluster-b"
----
-# ==========================================
-# 4) MultiClusterIngress (apply ONLY to the config cluster)
-#    Provisions a single Global HTTPS LB across regions with failover
-# ==========================================
-apiVersion: networking.gke.io/v1
-kind: MultiClusterIngress
-metadata:
-  name: nginx-global-ing
-  namespace: default
-  annotations:
-    # (Recommended) Reserve and set a GLOBAL static IP for stable address:
-    # networking.gke.io/static-ip: "34.x.y.z"
+# # ==========================================
+# # 1) Deployment (apply to BOTH clusters)
+# # ==========================================
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: nginx-simple-app
+#   labels:
+#     app.kubernetes.io/name: nginx-simple-app
+#     app.kubernetes.io/part-of: nginx-simple-app
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app.kubernetes.io/name: nginx-simple-app
+#   template:
+#     metadata:
+#       labels:
+#         app.kubernetes.io/name: nginx-simple-app
+#     spec:
+#       containers:
+#         - name: nginx
+#           image: us-docker.pkg.dev/hot-cold-drp/gke-docker-repo/nginx-simple-app:latest
+#           imagePullPolicy: Always
+#           ports:
+#             - name: http
+#               containerPort: 80
+#           resources:
+#             requests:
+#               cpu: "100m"
+#               memory: "128Mi"
+#             limits:
+#               cpu: "200m"
+#               memory: "256Mi"
+#           readinessProbe:
+#             httpGet:
+#               path: "/"
+#               port: 80
+#             initialDelaySeconds: 5
+#             periodSeconds: 10
+#             timeoutSeconds: 2
+#             failureThreshold: 3
+#           livenessProbe:
+#             httpGet:
+#               path: "/"
+#               port: 80
+#             initialDelaySeconds: 10
+#             periodSeconds: 10
+#             timeoutSeconds: 2
+#             failureThreshold: 3
+# ---
+# # ==========================================
+# # 2) BackendConfig (apply to BOTH clusters)
+# #    Namespace must match the Service/derived Service
+# # ==========================================
+# apiVersion: cloud.google.com/v1
+# kind: BackendConfig
+# metadata:
+#   name: nginx-cdn-backendconfig
+# spec:
+#   healthCheck:
+#     type: HTTP
+#     requestPath: "/"
+#     port: 80
+#     checkIntervalSec: 10
+#     timeoutSec: 5
+#     healthyThreshold: 1
+#     unhealthyThreshold: 3
+#   timeoutSec: 30
+#   connectionDraining:
+#     drainingTimeoutSec: 0
+#   cdn:
+#     enabled: true
+#     cacheMode: CACHE_ALL_STATIC
+#     defaultTtl: 3600s
+#     maxTtl: 86400s
+# ---
+# # ==========================================
+# # 3) MultiClusterService (apply ONLY to the config cluster)
+# #    Creates derived Services in member clusters and attaches BackendConfig
+# # ==========================================
+# apiVersion: networking.gke.io/v1
+# kind: MultiClusterService
+# metadata:
+#   name: nginx-simple-app-mcs
+#   namespace: default
+#   annotations:
+#     cloud.google.com/backend-config: '{"ports": {"80":"nginx-cdn-backendconfig"}}'
+# spec:
+#   template:
+#     spec:
+#       selector:
+#         app.kubernetes.io/name: nginx-simple-app
+#       ports:
+#         - name: http
+#           protocol: TCP
+#           port: 80
+#           targetPort: 80
+#   # Optional: explicitly list participating clusters (Fleet links)
+#   # clusters:
+#   # - link: "us-central1-b/cluster-a"
+#   # - link: "asia-south1-a/cluster-b"
+# ---
+# # ==========================================
+# # 4) MultiClusterIngress (apply ONLY to the config cluster)
+# #    Provisions a single Global HTTPS LB across regions with failover
+# # ==========================================
+# apiVersion: networking.gke.io/v1
+# kind: MultiClusterIngress
+# metadata:
+#   name: nginx-global-ing
+#   namespace: default
+#   annotations:
+#     # (Recommended) Reserve and set a GLOBAL static IP for stable address:
+#     # networking.gke.io/static-ip: "34.x.y.z"
 
-    # (Optional) Attach a pre-shared cert (Google-managed or uploaded):
-    # networking.gke.io/pre-shared-certs: "my-google-managed-cert"
+#     # (Optional) Attach a pre-shared cert (Google-managed or uploaded):
+#     # networking.gke.io/pre-shared-certs: "my-google-managed-cert"
 
-    # (Optional) Attach a FrontendConfig for HTTP->HTTPS redirect:
-    # networking.gke.io/frontend-config: "https-redirect"
-spec:
-  template:
-    spec:
-      # Default backend is the MultiClusterService defined above
-      backend:
-        serviceName: nginx-simple-app-mcs
-        servicePort: 80
-      # Optional: host-based routing
-      # rules:
-      # - host: app.example.com
-      #   http:
-      #     paths:
-      #     - path: /
-      #       backend:
-      #         serviceName: nginx-simple-app-mcs
-      #         servicePort: 80
+#     # (Optional) Attach a FrontendConfig for HTTP->HTTPS redirect:
+#     # networking.gke.io/frontend-config: "https-redirect"
+# spec:
+#   template:
+#     spec:
+#       # Default backend is the MultiClusterService defined above
+#       backend:
+#         serviceName: nginx-simple-app-mcs
+#         servicePort: 80
+#       # Optional: host-based routing
+#       # rules:
+#       # - host: app.example.com
+#       #   http:
+#       #     paths:
+#       #     - path: /
+#       #       backend:
+#       #         serviceName: nginx-simple-app-mcs
+#       #         servicePort: 80
