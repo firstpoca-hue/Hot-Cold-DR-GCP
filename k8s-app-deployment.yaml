@@ -50,21 +50,7 @@ spec:
 
 ---
 # ==========================================
-# 2. BackendConfig (enables Cloud CDN)
-# ==========================================
-apiVersion: cloud.google.com/v1
-kind: BackendConfig
-metadata:
-  name: nginx-cdn-backendconfig
-spec:
-  cdn:
-    enabled: true
-  connectionDraining:
-    drainingTimeoutSec: 0
-
----
-# ==========================================
-# 3. Service (NEG-enabled; use NodePort/ClusterIP for Ingress)
+# 2. Service (GKE external LoadBalancer)
 # ==========================================
 apiVersion: v1
 kind: Service
@@ -72,39 +58,15 @@ metadata:
   name: nginx-simple-app-svc
   labels:
     app.kubernetes.io/name: nginx-simple-app
-  annotations:
-    cloud.google.com/backend-config: '{"default":"nginx-cdn-backendconfig"}'
-    cloud.google.com/neg: '{"ingress": true}'    # <-- REQUIRED for NEGs
+  # For INTERNAL LB instead, uncomment the annotation below and add an RFC1918 subnet:
+  # annotations:
+  #   cloud.google.com/load-balancer-type: "Internal"
 spec:
-  # Use NodePort or omit this field (ClusterIP). DO NOT use LoadBalancer here.
-  type: NodePort
+  type: LoadBalancer
   selector:
     app.kubernetes.io/name: nginx-simple-app
   ports:
-    - protocol: TCP
+    - name: http
+      protocol: TCP
       port: 80
       targetPort: 80
-
----
-# ==========================================
-# 4. Ingress (GCE Ingress -> Global HTTP(S) LB + Cloud CDN)
-# ==========================================
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: nginx-cdn-ingress
-  annotations:
-    kubernetes.io/ingress.class: "gce"
-    # Optional: use a reserved global IP to keep address stable:
-    # kubernetes.io/ingress.global-static-ip-name: "nginx-cdn-ip"
-spec:
-  rules:
-    - http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: nginx-simple-app-svc
-                port:
-                  number: 80
