@@ -1,32 +1,32 @@
-apiVersion: networking.gke.io/v1
-kind: MultiClusterService
-metadata:
-  name: nginx-simple-app-mcs
-  namespace: default
-  annotations:
-    cloud.google.com/backend-config: '{"ports": {"80":"nginx-cdn-backendconfig"}}'
-spec:
-  template:
-    spec:
-      selector:
-        app.kubernetes.io/name: nginx-simple-app
-      ports:
-        - name: http
-          protocol: TCP
-          port: 80
-          targetPort: 80
----
-apiVersion: networking.gke.io/v1
-kind: MultiClusterIngress
-metadata:
-  name: nginx-global-ing
-  namespace: default
-  annotations:
-    # networking.gke.io/static-ip: "YOUR-GLOBAL-STATIC-IP"  # optional
-    # networking.gke.io/pre-shared-certs: "YOUR-CERT-NAME"  # optional
-spec:
-  template:
-    spec:
-      backend:
-        serviceName: nginx-simple-app-mcs
-        servicePort: 80
+# apiVersion: networking.gke.io/v1
+# kind: MultiClusterService
+# metadata:
+#   name: nginx-simple-app-mcs
+#   namespace: default
+#   annotations:
+#     cloud.google.com/backend-config: '{"ports": {"80":"nginx-cdn-backendconfig"}}'
+# spec:
+#   template:
+#     spec:
+#       selector:
+#         app.kubernetes.io/name: nginx-simple-app
+#       ports:
+#         - name: http
+#           protocol: TCP
+#           port: 80
+#           targetPort: 80
+# ---
+# apiVersion: networking.gke.io/v1
+# kind: MultiClusterIngress
+# metadata:
+#   name: nginx-global-ing
+#   namespace: default
+#   annotations:
+#     # networking.gke.io/static-ip: "YOUR-GLOBAL-STATIC-IP"  # optional
+#     # networking.gke.io/pre-shared-certs: "YOUR-CERT-NAME"  # optional
+# spec:
+#   template:
+#     spec:
+#       backend:
+#         serviceName: nginx-simple-app-mcs
+#         servicePort: 80
