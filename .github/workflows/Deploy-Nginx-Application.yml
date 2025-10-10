@@ -12,9 +12,6 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   LOCATION_A: us-central1           # primary region
   CLUSTER_A: app-cluster-hot        # primary cluster name
-  LOCATION_B: asia-south1           # secondary region
-  CLUSTER_B: app-cluster-cold       # secondary cluster name
-  CONFIG_CLUSTER: app-cluster-hot   # use A as config cluster
   IMAGE_REPO: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gke-docker-repo/nginx-simple-app
   IMAGE_TAG: ${{ github.sha }}
   IMAGE_NAME: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gke-docker-repo/nginx-simple-app:${{ github.sha }}
@@ -46,11 +43,14 @@ jobs:
         run: echo "USE_GKE_GCLOUD_AUTH_PLUGIN=True" >> $GITHUB_ENV
 
       - name: Set GCP project
-        run: gcloud config set project $PROJECT_ID
+        run: gcloud config set project "$PROJECT_ID"
 
       - name: Enable Required APIs
         run: |
-          gcloud services enable artifactregistry.googleapis.com container.googleapis.com --project "$PROJECT_ID"
+          gcloud services enable \
+            container.googleapis.com \
+            artifactregistry.googleapis.com \
+            --project "$PROJECT_ID"
 
       - name: Configure Docker (Artifact Registry)
         run: gcloud auth configure-docker us-docker.pkg.dev --quiet
@@ -86,11 +86,14 @@ jobs:
         run: echo "USE_GKE_GCLOUD_AUTH_PLUGIN=True" >> $GITHUB_ENV
 
       - name: Set GCP project
-        run: gcloud config set project $PROJECT_ID
+        run: gcloud config set project "$PROJECT_ID"
 
       - name: Enable Required APIs
         run: |
-          gcloud services enable artifactregistry.googleapis.com container.googleapis.com --project "$PROJECT_ID"
+          gcloud services enable \
+            container.googleapis.com \
+            artifactregistry.googleapis.com \
+            --project "$PROJECT_ID"
 
       - name: Configure Docker (Artifact Registry)
         run: gcloud auth configure-docker us-docker.pkg.dev --quiet
@@ -195,7 +198,7 @@ jobs:
       - run: echo "Pending manual approval in environment 'prod-approval'."
 
   # ---------------------------
-  # 3️⃣ DEPLOY
+  # 3️⃣ DEPLOY (single HOT cluster)
   # ---------------------------
   deploy:
     name: Deploy
@@ -228,7 +231,7 @@ jobs:
           gcloud services enable \
             container.googleapis.com \
             artifactregistry.googleapis.com \
-            gkehub.googleapis.com
+            --project "$PROJECT_ID"
 
       - name: Configure Docker (Artifact Registry)
         run: gcloud auth configure-docker us-docker.pkg.dev --quiet
@@ -239,49 +242,30 @@ jobs:
           docker push "$IMAGE_REPO:$IMAGE_TAG"
           docker push "$IMAGE_REPO:latest"
 
-      # ---------- Deploy workloads to Cluster A ----------
+      # ---------- Deploy workloads to HOT Cluster A ----------
       - name: Get credentials (Cluster A)
         run: gcloud container clusters get-credentials "$CLUSTER_A" --region "$LOCATION_A" --project "$PROJECT_ID"
 
-      - name: Deploy workloads to Cluster A
+      - name: Deploy to Cluster A (GCE Ingress)
+        shell: bash
         run: |
-          sed -e "s|image: .*gke-docker-repo/nginx-simple-app:.*|image: $IMAGE_NAME|g" gke-workloads.yaml | kubectl apply -f -
-          kubectl rollout status deployment/nginx-simple-app --timeout=5m
+          set -e
+          # Your single-cluster manifest should include Deployment + BackendConfig + Service(NEG) + Ingress
+          # Ensure BackendConfig TTLs are integers (e.g., defaultTtl: 3600, maxTtl: 86400)
+          sed -e "s|image: .*gke-docker-repo/nginx-simple-app:.*|image: $IMAGE_NAME|g" k8s-app-deployment.yaml | kubectl apply -f -
+          if ! kubectl rollout status deployment/nginx-simple-app --timeout=5m; then
+            echo "Rollout failed — collecting diagnostics..."
+            kubectl get deploy/nginx-simple-app -o yaml || true
+            kubectl get rs -l app.kubernetes.io/name=nginx-simple-app -o wide || true
+            kubectl get pods -l app.kubernetes.io/name=nginx-simple-app -o wide || true
+            POD="$(kubectl get pods -l app.kubernetes.io/name=nginx-simple-app -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+            [ -n "$POD" ] && kubectl describe pod "$POD" || true
+            [ -n "$POD" ] && kubectl logs "$POD" --all-containers --tail=200 || true
+            kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
+            exit 1
+          fi
 
-      # ---------- Deploy workloads to Cluster B ----------
-      - name: Get credentials (Cluster B)
-        run: gcloud container clusters get-credentials "$CLUSTER_B" --region "$LOCATION_B" --project "$PROJECT_ID"
-
-      - name: Deploy workloads to Cluster B
+      - name: Show Ingress address
         run: |
-          sed -e "s|image: .*gke-docker-repo/nginx-simple-app:.*|image: $IMAGE_NAME|g" gke-workloads.yaml | kubectl apply -f -
-          kubectl rollout status deployment/nginx-simple-app --timeout=5m
-
-      # ---------- Enable Fleet features + set config cluster (idempotent) ----------
-      - name: Enable Multi-cluster features (idempotent)
-        run: |
-          set -euo pipefail
-          gcloud container fleet memberships describe "$CLUSTER_A" --format='value(name)' \
-            || gcloud container fleet memberships register "$CLUSTER_A" \
-                 --gke-cluster="$LOCATION_A/$CLUSTER_A" --enable-workload-identity
-          gcloud container fleet memberships describe "$CLUSTER_B" --format='value(name)' \
-            || gcloud container fleet memberships register "$CLUSTER_B" \
-                 --gke-cluster="$LOCATION_B/$CLUSTER_B" --enable-workload-identity
-
-          gcloud container fleet features enable multiclusterservicediscovery || true
-          gcloud container fleet features enable multiclusteringress || true
-
-          gcloud container fleet features update multiclusteringress \
-            --member-config=membership="$CLUSTER_A",config-membership="$CLUSTER_A"
-
-          sleep 60
-
-      # ---------- Apply MCS/MCI to the config cluster only ----------
-      - name: Get credentials (Config cluster)
-        run: gcloud container clusters get-credentials "$CONFIG_CLUSTER" --region "$LOCATION_A" --project "$PROJECT_ID"
-
-      - name: Apply Multi-Cluster Ingress/Service (global LB with failover)
-        run: |
-          kubectl apply -f gke-mci.yaml
-          sleep 15
-          kubectl get mcs,mcis -n default || true
+          kubectl get ingress -A
+          echo "Visit the ADDRESS of your Ingress (http/https)."
