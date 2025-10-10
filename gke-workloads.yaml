@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-simple-app
+  labels:
+    app.kubernetes.io/name: nginx-simple-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nginx-simple-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nginx-simple-app
+    spec:
+      containers:
+        - name: nginx
+          image: us-docker.pkg.dev/hot-cold-drp/gke-docker-repo/nginx-simple-app:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet: { path: "/", port: 80 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: "/", port: 80 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: nginx-cdn-backendconfig
+spec:
+  healthCheck:
+    type: HTTP
+    requestPath: /
+    port: 80
+    checkIntervalSec: 10
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+  timeoutSec: 30
+  connectionDraining:
+    drainingTimeoutSec: 0
+  cdn:
+    enabled: true
+    cacheMode: CACHE_ALL_STATIC
+    defaultTtl: 3600    # must be integer
+    maxTtl: 86400       # must be integer
