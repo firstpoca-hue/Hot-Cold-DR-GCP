@@ -1,5 +1,5 @@
 # ==========================================
-# 1. Deployment (unchanged)
+# 1) Deployment (apply to BOTH clusters)
 # ==========================================
 apiVersion: apps/v1
 kind: Deployment
@@ -23,7 +23,8 @@ spec:
           image: us-docker.pkg.dev/hot-cold-drp/gke-docker-repo/nginx-simple-app:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 80
+            - name: http
+              containerPort: 80
           resources:
             requests:
               cpu: "100m"
@@ -33,7 +34,7 @@ spec:
               memory: "256Mi"
           readinessProbe:
             httpGet:
-              path: /
+              path: "/"
               port: 80
             initialDelaySeconds: 5
             periodSeconds: 10
@@ -41,70 +42,96 @@ spec:
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /
+              path: "/"
               port: 80
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 3
-
 ---
 # ==========================================
-# 2. BackendConfig (enables Cloud CDN)
+# 2) BackendConfig (apply to BOTH clusters)
+#    Namespace must match the Service/derived Service
 # ==========================================
 apiVersion: cloud.google.com/v1
 kind: BackendConfig
 metadata:
   name: nginx-cdn-backendconfig
 spec:
-  cdn:
-    enabled: true
+  healthCheck:
+    type: HTTP
+    requestPath: "/"
+    port: 80
+    checkIntervalSec: 10
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+  timeoutSec: 30
   connectionDraining:
     drainingTimeoutSec: 0
-
+  cdn:
+    enabled: true
+    cacheMode: CACHE_ALL_STATIC
+    defaultTtl: 3600s
+    maxTtl: 86400s
 ---
 # ==========================================
-# 3. Service (NEG-enabled; use NodePort/ClusterIP for Ingress)
+# 3) MultiClusterService (apply ONLY to the config cluster)
+#    Creates derived Services in member clusters and attaches BackendConfig
 # ==========================================
-apiVersion: v1
-kind: Service
+apiVersion: networking.gke.io/v1
+kind: MultiClusterService
 metadata:
-  name: nginx-simple-app-svc
-  labels:
-    app.kubernetes.io/name: nginx-simple-app
+  name: nginx-simple-app-mcs
+  namespace: default
   annotations:
-    cloud.google.com/backend-config: '{"default":"nginx-cdn-backendconfig"}'
-    cloud.google.com/neg: '{"ingress": true}'    # <-- REQUIRED for NEGs
+    cloud.google.com/backend-config: '{"ports": {"80":"nginx-cdn-backendconfig"}}'
 spec:
-  # Use NodePort or omit this field (ClusterIP). DO NOT use LoadBalancer here.
-  type: NodePort
-  selector:
-    app.kubernetes.io/name: nginx-simple-app
-  ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 80
-
+  template:
+    spec:
+      selector:
+        app.kubernetes.io/name: nginx-simple-app
+      ports:
+        - name: http
+          protocol: TCP
+          port: 80
+          targetPort: 80
+  # Optional: explicitly list participating clusters (Fleet links)
+  # clusters:
+  # - link: "us-central1-b/cluster-a"
+  # - link: "asia-south1-a/cluster-b"
 ---
 # ==========================================
-# 4. Ingress (GCE Ingress -> Global HTTP(S) LB + Cloud CDN)
+# 4) MultiClusterIngress (apply ONLY to the config cluster)
+#    Provisions a single Global HTTPS LB across regions with failover
 # ==========================================
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: networking.gke.io/v1
+kind: MultiClusterIngress
 metadata:
-  name: nginx-cdn-ingress
+  name: nginx-global-ing
+  namespace: default
   annotations:
-    kubernetes.io/ingress.class: "gce"
-    # Optional: use a reserved global IP to keep address stable:
-    # kubernetes.io/ingress.global-static-ip-name: "nginx-cdn-ip"
+    # (Recommended) Reserve and set a GLOBAL static IP for stable address:
+    # networking.gke.io/static-ip: "34.x.y.z"
+
+    # (Optional) Attach a pre-shared cert (Google-managed or uploaded):
+    # networking.gke.io/pre-shared-certs: "my-google-managed-cert"
+
+    # (Optional) Attach a FrontendConfig for HTTP->HTTPS redirect:
+    # networking.gke.io/frontend-config: "https-redirect"
 spec:
-  rules:
-    - http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: nginx-simple-app-svc
-                port:
-                  number: 80
+  template:
+    spec:
+      # Default backend is the MultiClusterService defined above
+      backend:
+        serviceName: nginx-simple-app-mcs
+        servicePort: 80
+      # Optional: host-based routing
+      # rules:
+      # - host: app.example.com
+      #   http:
+      #     paths:
+      #     - path: /
+      #       backend:
+      #         serviceName: nginx-simple-app-mcs
+      #         servicePort: 80
