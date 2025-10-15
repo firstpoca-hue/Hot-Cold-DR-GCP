@@ -33,10 +33,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Authenticates and provides ADC to Terraform and gcloud
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # Ensure gcloud CLI is available for enable/disable calls
+      - name: Setup gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Set gcloud project
+        run: |
+          gcloud config set project "${{ env.EXPECTED_PROJECT_ID }}"
+          gcloud config list --format="text"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -88,6 +98,7 @@ jobs:
           fi
           echo "Destroy confirmation accepted for ${{ env.EXPECTED_PROJECT_ID }}"
 
+      # Optional but harmless before destroy; ensures Terraform can talk to these APIs if needed
       - name: Enable Required APIs
         run: |
           gcloud services enable \
@@ -96,14 +107,35 @@ jobs:
             container.googleapis.com \
             iam.googleapis.com \
             monitoring.googleapis.com \
-            --project=${{ env.EXPECTED_PROJECT_ID }}
+            --project="${{ env.EXPECTED_PROJECT_ID }}"
 
       - name: Terraform Destroy
         run: terraform destroy -var-file="${{ env.TFVARS_PATH }}" -auto-approve
 
-      - name: Disable compute.googleapis.com (and dependent services)
+      # Safe API teardown: disable if currently enabled (no invalid flags)
+      - name: Disable core GCP services post-destroy
+        shell: bash
         run: |
-          gcloud services disable compute.googleapis.com \
-            --project=${{ env.EXPECTED_PROJECT_ID }} \
-            --force \
-            --disable-dependent-services
+          set -euo pipefail
+          PROJECT="${{ env.EXPECTED_PROJECT_ID }}"
+          # List of services you likely don't want on after a full teardown
+          SERVICES=(
+            compute.googleapis.com
+            container.googleapis.com
+            artifactregistry.googleapis.com
+            containerregistry.googleapis.com
+            monitoring.googleapis.com
+            logging.googleapis.com
+            cloudkms.googleapis.com
+            dns.googleapis.com
+          )
+
+          for SVC in "${SERVICES[@]}"; do
+            if gcloud services list --enabled --project="$PROJECT" \
+                 --filter="NAME=$SVC" --format="value(NAME)" | grep -q .; then
+              echo "Disabling $SVC in project $PROJECT"
+              gcloud services disable "$SVC" --project="$PROJECT" --force
+            else
+              echo "$SVC is already disabled in project $PROJECT"
+            fi
+          done
