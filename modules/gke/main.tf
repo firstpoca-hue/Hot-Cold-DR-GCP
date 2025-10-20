@@ -1,75 +1,62 @@
-# 
-
-resource "google_project_service" "services" {
-  for_each = toset([
-    "compute.googleapis.com",
-    "container.googleapis.com",
-    "artifactregistry.googleapis.com",
-    "cloudresourcemanager.googleapis.com",
-    "iam.googleapis.com",
-    "dns.googleapis.com",
-  ])
-
-  project = var.project_id
-  service = each.value
-  disable_on_destroy = false
+locals {
+  cluster_name = var.cluster_name
 }
 
-# Artifact Registry (multi-region)
-resource "google_artifact_registry_repository" "docker_repo" {
-  project      = var.project_id
-  location     = "us" # multi-region US
-  repository_id = "gke-docker-repo"
-  description  = "Multi-region Artifact Registry for container images"
-  format       = "DOCKER"
+# ================================
+# Primary GKE Cluster Resource
+# ================================
+resource "google_container_cluster" "gke_cluster" {
+  name                = local.cluster_name
+  location            = var.region
+  project             = var.project_id
+  network             = var.network
+  subnetwork          = var.subnetwork
 
-  depends_on = [google_project_service.services]
-}
+  remove_default_node_pool = true
+  initial_node_count       = 1
 
-# GKE Node Service Account
-resource "google_service_account" "gke_primary" {
-  project      = var.project_id
-  account_id   = "gke-primary"      # this is the GCP service account ID (hyphen allowed)
-  display_name = "GKE Primary Service Account"
-}
+  release_channel {
+    channel = "REGULAR"
+  }
 
+  ip_allocation_policy {}
 
-# GKE Cluster
-resource "google_container_cluster" "primary_nodes" {
-  deletion_protection = false
-  name     = var.cluster_name
-  location = var.region
-  initial_node_count = 1
+  workload_identity_config {
+    workload_pool = "${var.project_id}.svc.id.goog"
+  }
 
-  node_config {
-    machine_type   = var.node_machine_type
-    disk_size_gb   = var.disk_size_gb
-    oauth_scopes   = ["https://www.googleapis.com/auth/cloud-platform"]
-    service_account = google_service_account.gke_primary.email   # use underscore
+  logging_config {
+    enable_components = ["SYSTEM_COMPONENTS", "WORKLOADS"]
+  }
+
+  monitoring_config {
+    enable_components = ["SYSTEM_COMPONENTS"]
   }
 }
 
-
-resource "google_project_service" "logging" {
-  service                     = "logging.googleapis.com"
-  disable_on_destroy           = false
-  disable_dependent_services   = true
-  project                     = var.project_id
-}
-
-resource "google_container_node_pool" "primary_nodes" {
-  name       = "primary-nodes"
+# ================================
+# Node Pool for GKE Cluster
+# ================================
+resource "google_container_node_pool" "default_pool" {
+  project    = var.project_id
+  cluster    = google_container_cluster.gke_cluster.name
   location   = var.region
-  cluster    = google_container_cluster.primary_nodes.name   # updated reference
-  node_count = 1
+  name       = "default-node-pool"
+  node_count = 2
 
   node_config {
-    machine_type = "e2-small"
-    disk_size_gb = 30
+    machine_type = "e2-standard-2"
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform",
     ]
-  }
 
-  depends_on = [google_container_cluster.primary_nodes]
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
+
+    labels = {
+      environment = "dr"
+      role        = "primary"
+    }
+  }
 }
