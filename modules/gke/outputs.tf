@@ -1,13 +1,13 @@
-output "artifact_registry_repo" {
-  value = google_artifact_registry_repository.docker_repo.id
-}
-output "gke_service_account_email" {
-  value = google_service_account.gke_primary.email   # use underscore here
+output "cluster_name" {
+  value = google_container_cluster.gke_cluster.name
+  description = "GKE cluster name"
 }
 
-output "cluster_name" {
-  value = google_container_cluster.primary_nodes.name
-}
 output "endpoint" {
-  value = google_container_cluster.primary_nodes.endpoint
+  value = google_container_cluster.gke_cluster.endpoint
+  description = "GKE endpoint (private/public depending on cluster config)"
+}
+
+output "location" {
+  value = google_container_cluster.gke_cluster.location
 }
