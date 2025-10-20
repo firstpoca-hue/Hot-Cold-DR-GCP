@@ -1,8 +1,15 @@
 project_id = "hot-cold-drp"
 pattern    = "dev"
+regions = {
+  primary   = "us-central1"
+  secondary = "us-west1"
+}
 
-region_a = "us-central1"      # Primary (Hot)
-region_b = "us-west1"         # Secondary (Cold)
+# Optional — only if you want custom CIDR blocks
+subnet_cidrs = {
+  primary   = "10.10.0.0/20"
+  secondary = "10.20.0.0/20"
+}
 artifact_registry_location = "us"
 cluster_name_prefix = "app-cluster"
 cluster_prefix      = "dev-gke"
@@ -12,16 +19,16 @@ artifact_registry_repo = "gcr.io/hot-cold-drp/app-images"
 
 credentials_file = "/home/user/gcp-keys/my-project-sa.json"
 
-subnets = [
-  {
-    network_cidr = "10.0.0.0/16"
-    region       = "us-central1"  # hot subnet
-  },
-  {
-    network_cidr = "10.1.0.0/16"
-    region       = "us-west1"     # cold subnet
-  }
-]
+# subnets = [
+#   {
+#     network_cidr = "10.0.0.0/16"
+#     region       = "us-central1"  # hot subnet
+#   },
+#   {
+#     network_cidr = "10.1.0.0/16"
+#     region       = "us-west1"     # cold subnet
+#   }
+# ]
 
 
 network_name                 = "tf-gke-vpc"
@@ -48,3 +55,17 @@ master_subnet_cidr = "172.16.0.0/28"
 
 gke_account_email = "terraform-ci@hot-cold-drp.iam.gserviceaccount.com"
 
+vpc_name         = "gke-dr-vpc"
+
+cluster_name_primary   = "gke-primary"
+cluster_name_secondary = "gke-secondary"
+
+ #These come from your network module outputs
+# (Ensure that your network module outputs these correctly)
+network_self_link        = "projects/your-gcp-project/global/networks/gke-dr-vpc"
+subnet_primary_self_link = "projects/your-gcp-project/regions/us-central1/subnetworks/gke-dr-vpc-primary"
+subnet_secondary_self_link = "projects/your-gcp-project/regions/us-east1/subnetworks/gke-dr-vpc-secondary"
+provision_secondary = true
+db_version           = "POSTGRES_15"
+db_tier              = "db-f1-micro"
+db_password          = "admin123@"
