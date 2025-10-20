@@ -1,106 +1,70 @@
+# 
+
 variable "project_id" {
-  type = string
+  description = "GCP project id"
+  type        = string
 }
 
-variable "pattern" {
-  type = string
+variable "primary_region" {
+  description = "Primary region"
+  type        = string
+  default     = "us-central1"
 }
 
-variable "region_a" {
-  type = string
+variable "secondary_region" {
+  description = "Secondary (cold) region"
+  type        = string
+  default     = "us-east1"
 }
 
-variable "region_b" {
-  type = string
+variable "vpc_name" {
+  description = "VPC name"
+  type        = string
+  default     = "dr-vpc"
 }
 
-variable "artifact_registry_location" {
-  type = string
+variable "artifact_repo" {
+  description = "Artifact Registry repo id"
+  type        = string
+  default     = "app-images"
 }
 
-variable "cluster_name_prefix" {
-  type = string
+variable "provision_secondary" {
+  description = "Flag to provision the cold region GKE cluster"
+  type        = bool
+  default     = false
 }
 
-variable "cluster_prefix" {
-  type = string
+# cluster names used by root when calling gke modules
+variable "cluster_name_primary" {
+  description = "Primary GKE cluster name"
+  type        = string
+  default     = "gke-primary"
 }
 
-variable "artifact_repo_location" {
-  type = string
+variable "cluster_name_secondary" {
+  description = "Secondary GKE cluster name"
+  type        = string
+  default     = "gke-secondary"
 }
 
-variable "artifact_registry_repo" {
-  type = string
+# DB vars used by root
+variable "db_version" {
+  description = "Cloud SQL DB version"
+  type        = string
+  default     = "POSTGRES_15"
 }
 
-variable "credentials_file" {
-  type = string
+variable "db_tier" {
+  description = "Cloud SQL machine tier"
+  type        = string
+  default     = "db-custom-1-3840"
 }
 
-variable "subnets" {
-  type = list(object({
-    network_cidr = string
-    region       = string
-  }))
+
+variable "db_password" {
+  description = "Database password"
+  type        = string
+  sensitive   = true
 }
 
-variable "network_name" {
-  type = string
-}
-
-variable "gke_service_account_name" {
-  type = string
-}
-
-variable "private_subnet_cidr" {
-  type = string
-}
-
-variable "public_subnet_cidr" {
-  type = string
-}
-
-variable "bastion_service_account_name" {
-  type = string
-}
-
-variable "cluster_name" {
-  type = string
-}
-
-variable "cluster_secondary_range_name" {
-  type = string
-}
-
-variable "services_secondary_range_name" {
-  type = string
-}
-
-variable "node_count" {
-  type = number
-}
-
-variable "node_machine_type" {
-  type = string
-}
-
-variable "node_disk_size" {
-  type = number
-}
-
-variable "cluster_secondary_range" {
-  type = string
-}
-
-variable "services_secondary_range" {
-  type = string
-}
-
-variable "master_subnet_cidr" {
-  type = string
-}
-
-variable "gke_account_email" {
-  type = string
-}
