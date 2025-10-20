@@ -1,18 +1,25 @@
-output "network_name" {
-  value = module.network.network_name
+# 
+
+output "artifact_registry_repo_id" {
+  value = google_artifact_registry_repository.repo.id
 }
 
-output "hot_cluster_name" {
-  value = module.gke_hot.cluster_name
+output "gke_primary_cluster_name" {
+  value = try(module.gke_hot.cluster_name, null)
 }
 
-output "hot_cluster_endpoint" {
-  value = module.gke_hot.endpoint
+output "gke_primary_endpoint" {
+  value = try(module.gke_hot.endpoint, null)
 }
 
-output "artifact_repository" {
-  value = module.project_services.artifact_registry_repo
+output "gke_secondary_cluster_name" {
+  value = try(module.gke_cold.cluster_name, null)
 }
-output "artifact_registry_repo" {
-  value = module.project_services.artifact_registry_repo
+
+output "gke_secondary_endpoint" {
+  value = try(module.gke_cold.endpoint, null)
+}
+
+output "db_primary_connection_name" {
+  value = google_sql_database_instance.db_primary.connection_name
 }
