@@ -12,7 +12,7 @@ on:
 env:
   TF_IN_AUTOMATION: "true"
   WORKING_DIR: root
-  TFVARS_PATH: env/dev/terraform.tfvars   # fixed relative path
+  TFVARS_PATH: ../env/dev/terraform.tfvars   # ✅ FIXED PATH
 
 jobs:
 
@@ -127,6 +127,15 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      - name: Verify tfvars path exists ✅
+        run: |
+          if [ ! -f "${{ env.TFVARS_PATH }}" ]; then
+            echo "❌ ERROR: tfvars file not found at path: ${{ env.TFVARS_PATH }}"
+            exit 1
+          else
+            echo "✅ tfvars file found at: ${{ env.TFVARS_PATH }}"
+          fi
+
       - name: Terraform Init
         run: terraform init -reconfigure
 
@@ -137,7 +146,9 @@ jobs:
           set -o pipefail
           set +e
           terraform validate
-          terraform plan -var-file="${{ env.TFVARS_PATH }}" -input=false -no-color -out=tfplan.bin -detailed-exitcode | tee plan.txt
+          terraform plan \
+            -var-file="${{ env.TFVARS_PATH }}" \
+            -input=false -no-color -out=tfplan.bin -detailed-exitcode | tee plan.txt
           code=$?
           set -e
           if [ $code -eq 0 ]; then
