@@ -1,32 +1,45 @@
-# Create Monitoring Workspace
-# resource "google_monitoring_workspace" "workspace" {
-#   project = var.project_id
-# }
+# Simple Uptime Check on LB host
+resource "google_monitoring_uptime_check_config" "http" {
+  display_name = "frontend-uptime"
+  monitored_resource {
+    type   = "uptime_url"
+    labels = { host = var.primary_lb_host }
+  }
+  http_check { 
+  path = "/" 
+  port = 443 
+  use_ssl = true 
+  }
+  timeout  = "10s"
+  period   = "60s"
+}
 
-# Create an alerting policy for CPU usage
-resource "google_monitoring_alert_policy" "cpu_alert" {
-  display_name = var.alert_policy_name
+# Notification channel (email)
+resource "google_monitoring_notification_channel" "email" {
+  display_name = "DR-alert-email"
+  type         = "email"
+  labels = { email_address = var.alert_channel_email }
+}
+
+# Alert policy triggers Cloud Run Job via Webhook (invoke job execution URL)
+# We use a docs-recommended HTTP notification (webhook) to Cloud Run invoker URL
+resource "google_monitoring_alert_policy" "ap" {
+  display_name = "Primary Down - Trigger DR"
   combiner     = "OR"
   conditions {
-    display_name = "High CPU usage"
+    display_name = "UptimeCheckFailed"
     condition_threshold {
-      filter = "metric.type=\"compute.googleapis.com/instance/cpu/utilization\" resource.type=\"gce_instance\""
-      comparison = "COMPARISON_GT"
-      threshold_value = var.metric_threshold
-      duration = "60s"
-      aggregations {
-        alignment_period   = "60s"
-        per_series_aligner = "ALIGN_MEAN"
+      filter          = "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" resource.type=\"uptime_url\""
+      comparison      = "COMPARISON_LT"
+      threshold_value = 1
+      duration        = "120s"
+      trigger { count = 1 }
+      aggregations { 
+      alignment_period = "60s" 
+      per_series_aligner = "ALIGN_MEAN" 
       }
     }
   }
-
-  notification_channels = [] # You can attach notification channels here
-  enabled = true
-}
-
-resource "google_project_service" "monitoring" {
-  project = var.project_id
-  service = "monitoring.googleapis.com"
-  disable_on_destroy = false
+  notification_channels = [google_monitoring_notification_channel.email.name]
+  documentation { content = "Primary down. DR job should run: ${var.run_job_name}" }
 }
