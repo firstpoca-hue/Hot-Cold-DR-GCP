@@ -12,9 +12,9 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   LOCATION: us-central1
   CLUSTER_NAME: gke-primary
-  IMAGE_REPO: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/app-images
+  IMAGE_REPO: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/app-images
   IMAGE_TAG: ${{ github.sha }}
-  IMAGE_NAME: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/app-images/nginx-simple-app:${{ github.sha }}
+  IMAGE_NAME: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/app-images/nginx-simple-app:${{ github.sha }}
   svc_acc: gcp-terraform-key@hot-cold-drp.iam.gserviceaccount.com
 
 jobs:
