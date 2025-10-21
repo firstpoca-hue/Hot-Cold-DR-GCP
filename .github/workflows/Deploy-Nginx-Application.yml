@@ -11,7 +11,7 @@ permissions:
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   LOCATION: us-central1
-  CLUSTER_NAME: app-cluster-hot
+  CLUSTER_NAME: gke-primary
   IMAGE_REPO: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gke-docker-repo/nginx-simple-app
   IMAGE_TAG: ${{ github.sha }}
   IMAGE_NAME: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gke-docker-repo/nginx-simple-app:${{ github.sha }}
@@ -48,12 +48,14 @@ jobs:
       - name: Enable Required APIs
         run: |
           gcloud services enable artifactregistry.googleapis.com container.googleapis.com --project "$PROJECT_ID"
+
       - name: Configure Docker (Artifact Registry)
         run: gcloud auth configure-docker us-docker.pkg.dev --quiet
 
       - name: Build Docker Image
         run: |
           docker build -t "$IMAGE_REPO:$IMAGE_TAG" -t "$IMAGE_REPO:latest" -f DockerFile .
+
   # ---------------------------
   # 2️⃣ TRIVY SCAN
   # ---------------------------
@@ -86,6 +88,7 @@ jobs:
       - name: Enable Required APIs
         run: |
           gcloud services enable artifactregistry.googleapis.com container.googleapis.com --project "$PROJECT_ID"
+
       - name: Configure Docker (Artifact Registry)
         run: gcloud auth configure-docker us-docker.pkg.dev --quiet
 
@@ -93,6 +96,7 @@ jobs:
       - name: Build Docker Image (for scanning)
         run: |
           docker build -t "$IMAGE_REPO:$IMAGE_TAG" -t "$IMAGE_REPO:latest" -f DockerFile .
+
       # ---- Human-readable Trivy (artifact)
       - name: Trivy FS (artifact)
         uses: aquasecurity/trivy-action@0.28.0
@@ -126,6 +130,7 @@ jobs:
             echo "===== TRIVY IMAGE SCAN (${IMAGE_REPO}:${IMAGE_TAG}) ====="
             cat trivy-image.txt 2>/dev/null || true
           } > trivy.output
+
       - name: Upload Trivy artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -218,6 +223,7 @@ jobs:
       - name: Enable Required APIs
         run: |
           gcloud services enable artifactregistry.googleapis.com container.googleapis.com --project "$PROJECT_ID"
+
       - name: Grant Artifact Registry pull to GKE node SA
         id: grant-ar
         shell: bash
@@ -234,6 +240,7 @@ jobs:
             --role="roles/artifactregistry.reader" \
             --quiet
           sleep 10
+
       - name: Configure Docker (Artifact Registry)
         run: gcloud auth configure-docker us-docker.pkg.dev --quiet
 
@@ -241,10 +248,12 @@ jobs:
       - name: Build Docker Image (release)
         run: |
           docker build -t "$IMAGE_REPO:$IMAGE_TAG" -t "$IMAGE_REPO:latest" -f DockerFile .
+
       - name: Push Docker Image
         run: |
           docker push "$IMAGE_REPO:$IMAGE_TAG"
           docker push "$IMAGE_REPO:latest"
+
       - name: Get GKE Credentials
         run: gcloud container clusters get-credentials "$CLUSTER_NAME" --region "$LOCATION" --project "$PROJECT_ID"
 
@@ -265,6 +274,7 @@ jobs:
             kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
             exit 1
           fi
+
       - name: Verify running image
         run: |
           kubectl get pods -l app.kubernetes.io/name=nginx-simple-app -o jsonpath='{.items[0].spec.containers[0].image}{"\n"}'
