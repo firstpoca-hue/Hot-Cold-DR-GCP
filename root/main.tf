@@ -128,13 +128,18 @@ resource "google_sql_database_instance" "db_replica" {
 # ==========================================================
 # 6) Secrets
 # ==========================================================
+# ==========================================================
+# 6) Secrets in Secret Manager
+# ==========================================================
 resource "google_secret_manager_secret" "db_pass" {
   secret_id = "db-password"
+
   replication {
     auto {}
   }
 }
 
-resource "google_secret_manager_secret_version" "db_pass_v" {
+resource "google_secret_manager_secret_version" "api_key_v" {
   secret      = google_secret_manager_secret.db_pass.id
-  secret_data = random_password.
+  secret_data = "super-secure-db-password" # or use variable(var.db_password)
+}
