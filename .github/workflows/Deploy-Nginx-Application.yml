@@ -246,11 +246,11 @@ jobs:
       # Build again in this job (separate runner) to push the exact image we deploy
       - name: Build Docker Image (release)
         run: |
-          docker build -t "$IMAGE_REPO:$IMAGE_TAG" -t "$IMAGE_REPO:latest" -f DockerFile .
+          docker build -t "$IMAGE_NAME" -t "${{ env.IMAGE_REPO }}/nginx-simple-app:latest" -f Dockerfile .
       - name: Push Docker Image
         run: |
-          docker push "$IMAGE_REPO:$IMAGE_TAG"
-          docker push "$IMAGE_REPO:latest"
+          docker push "$IMAGE_NAME"
+          docker push "${{ env.IMAGE_REPO }}/nginx-simple-app:latest"
       - name: Get GKE Credentials
         run: gcloud container clusters get-credentials "$CLUSTER_NAME" --region "$LOCATION" --project "$PROJECT_ID"
 
