@@ -15,6 +15,7 @@ env:
   IMAGE_REPO: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gke-docker-repo/nginx-simple-app
   IMAGE_TAG: ${{ github.sha }}
   IMAGE_NAME: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/gke-docker-repo/nginx-simple-app:${{ github.sha }}
+  svc_acc: gcp-terraform-key@hot-cold-drp.iam.gserviceaccount.com
 
 jobs:
   # ---------------------------
@@ -230,13 +231,13 @@ jobs:
         run: |
           set -euo pipefail
           NODE_SA="$(gcloud container clusters describe "$CLUSTER_NAME" --region "$LOCATION" --format='value(nodeConfig.serviceAccount)')"
-          if [[ -z "${NODE_SA}" || "${NODE_SA}" == "null" ]]; then
+          if [[ -z "${svc_acc}" || "${svc_acc}" == "null" ]]; then
             PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
             NODE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
           fi
           echo "NODE_SA=$NODE_SA" >> "$GITHUB_ENV"
           gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-            --member="serviceAccount:${NODE_SA}" \
+            --member="serviceAccount:${svc_acc}" \
             --role="roles/artifactregistry.reader" \
             --quiet
           sleep 10
