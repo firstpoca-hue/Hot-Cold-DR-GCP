@@ -13,6 +13,7 @@ module "network" {
   source     = "../modules/network"
   project_id = var.project_id
   vpc_name   = var.vpc_name
+
   regions = {
     primary   = var.primary_region
     secondary = var.secondary_region
@@ -22,7 +23,7 @@ module "network" {
 }
 
 # ==========================================================
-# 2) Artifact Registry (for container images)
+# 2) Artifact Registry
 # ==========================================================
 resource "google_artifact_registry_repository" "repo" {
   location      = var.primary_region
@@ -46,7 +47,7 @@ module "gke_hot" {
 }
 
 # ==========================================================
-# 4) Secondary (COLD) GKE Cluster (optional)
+# 4) Secondary (COLD) GKE Cluster - Created only during failover
 # ==========================================================
 module "gke_cold" {
   source     = "../modules/gke"
@@ -56,11 +57,15 @@ module "gke_cold" {
   cluster_name = var.cluster_name_secondary
   network      = module.network.vpc_self_link
   subnetwork   = module.network.subnet_secondary_self_link
+
+  # This ensures cold cluster is only created when you enable it
   enable       = var.provision_secondary
+
+  count        = var.provision_secondary ? 1 : 0
 }
 
 # ==========================================================
-# 5) Cloud SQL (Primary + Cross-region replica)
+# 5) Cloud SQL (Primary + Replica)
 # ==========================================================
 resource "random_password" "db" {
   length  = 24
@@ -102,7 +107,9 @@ resource "google_sql_database" "appdb" {
   instance = google_sql_database_instance.db_primary.name
 }
 
+# Replica will be created only when failover happens
 resource "google_sql_database_instance" "db_replica" {
+  count                = var.provision_secondary ? 1 : 0
   name                 = "app-pg-replica"
   database_version     = var.db_version
   master_instance_name = google_sql_database_instance.db_primary.name
@@ -119,30 +126,15 @@ resource "google_sql_database_instance" "db_replica" {
 }
 
 # ==========================================================
-# 6) Secrets in Secret Manager
+# 6) Secrets
 # ==========================================================
 resource "google_secret_manager_secret" "db_pass" {
   secret_id = "db-password"
-
   replication {
     auto {}
   }
 }
 
-resource "google_secret_manager_secret_version" "api_key_v" {
+resource "google_secret_manager_secret_version" "db_pass_v" {
   secret      = google_secret_manager_secret.db_pass.id
-  secret_data = "super-secure-db-password" # or use variable(var.db_password)
-}
-
-
-# Store DB password
-# resource "google_secret_manager_secret" "db_pass" {
-#   name    = "db-password"
-#   project = var.project_id
-
-#   replication {
-#     automatic = true
-#   }
-# }
-
-
+  secret_data = random_password.
