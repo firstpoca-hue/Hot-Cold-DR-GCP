@@ -12,57 +12,49 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   LOCATION: us-central1
   CLUSTER_NAME: gke-primary
-  IMAGE_REPO: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/app-images
+  IMAGE_REPO: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/app-images
   IMAGE_TAG: ${{ github.sha }}
-  IMAGE_NAME: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/app-images/nginx-simple-app:${{ github.sha }}
-  SVC_ACC: gcp-terraform-key@hot-cold-drp.iam.gserviceaccount.com
+  IMAGE_NAME: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/app-images/nginx-simple-app:${{ github.sha }}
+  svc_acc: gcp-terraform-key@hot-cold-drp.iam.gserviceaccount.com
 
 jobs:
   # ---------------------------
-  # 1️⃣ BUILD & PUSH IMAGE
+  # 1️⃣ BUILD
   # ---------------------------
   build:
-    name: Build & Push Docker Image
+    name: Build
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
+      - name: Google Cloud Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Setup gcloud SDK
+      - name: Install gcloud and GKE auth plugin
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
           install_components: 'gke-gcloud-auth-plugin'
           export_default_credentials: true
 
-      - name: Set GCP Project
+      - name: Enable GKE auth plugin
+        run: echo "USE_GKE_GCLOUD_AUTH_PLUGIN=True" >> $GITHUB_ENV
+
+      - name: Set GCP project
         run: gcloud config set project $PROJECT_ID
 
       - name: Enable Required APIs
         run: |
           gcloud services enable artifactregistry.googleapis.com container.googleapis.com --project "$PROJECT_ID"
-
-      - name: Configure Docker for Artifact Registry
-        run: |
-          gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
-
-      - name: Verify Dockerfile presence
-        run: ls -l Dockerfile
+      - name: Configure Docker (Artifact Registry)
+        run: gcloud auth configure-docker us-docker.pkg.dev --quiet
 
       - name: Build Docker Image
         run: |
-          docker build -t "$IMAGE_REPO:$IMAGE_TAG" -t "$IMAGE_REPO:latest" -f Dockerfile .
-
-      - name: Push Docker Image to Artifact Registry
-        run: |
-          docker push "$IMAGE_REPO:$IMAGE_TAG"
-          docker push "$IMAGE_REPO:latest"
-
+          docker build -t "$IMAGE_REPO:$IMAGE_TAG" -t "$IMAGE_REPO:latest" -f DockerFile .
   # ---------------------------
   # 2️⃣ TRIVY SCAN
   # ---------------------------
@@ -74,18 +66,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
+      - name: Google Cloud Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+      - name: Install gcloud and GKE auth plugin
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          install_components: 'gke-gcloud-auth-plugin'
+          export_default_credentials: true
 
-      - name: Pull Built Image for Scan
-        run: docker pull ${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
+      - name: Enable GKE auth plugin
+        run: echo "USE_GKE_GCLOUD_AUTH_PLUGIN=True" >> $GITHUB_ENV
 
-      - name: Trivy Filesystem Scan
+      - name: Set GCP project
+        run: gcloud config set project $PROJECT_ID
+
+      - name: Enable Required APIs
+        run: |
+          gcloud services enable artifactregistry.googleapis.com container.googleapis.com --project "$PROJECT_ID"
+      - name: Configure Docker (Artifact Registry)
+        run: gcloud auth configure-docker us-docker.pkg.dev --quiet
+
+      # Build image again in this job's runner so Trivy can scan it locally
+      - name: Build Docker Image (for scanning)
+        run: |
+          docker build -t "$IMAGE_REPO:$IMAGE_TAG" -t "$IMAGE_REPO:latest" -f DockerFile .
+      # ---- Human-readable Trivy (artifact)
+      - name: Trivy FS (artifact)
         uses: aquasecurity/trivy-action@0.28.0
         continue-on-error: true
         with:
@@ -96,7 +106,7 @@ jobs:
           exit-code: '0'
           scanners: vuln,secret,misconfig,license
 
-      - name: Trivy Image Scan
+      - name: Trivy Image (artifact)
         uses: aquasecurity/trivy-action@0.28.0
         continue-on-error: true
         with:
@@ -107,24 +117,63 @@ jobs:
           ignore-unfixed: true
           scanners: vuln,secret,misconfig,license
 
-      - name: Combine Trivy Reports
+      - name: Combine Trivy outputs -> trivy.output
         shell: bash
         run: |
           {
-            echo "===== TRIVY FILESYSTEM SCAN ====="
-            cat trivy-fs.txt || true
+            echo "===== TRIVY FS SCAN (repo) ====="
+            cat trivy-fs.txt 2>/dev/null || true
             echo
-            echo "===== TRIVY IMAGE SCAN ====="
-            cat trivy-image.txt || true
+            echo "===== TRIVY IMAGE SCAN (${IMAGE_REPO}:${IMAGE_TAG}) ====="
+            cat trivy-image.txt 2>/dev/null || true
           } > trivy.output
-
-      - name: Upload Trivy Scan Results
+      - name: Upload Trivy artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: trivy.output
           path: trivy.output
+          if-no-files-found: warn
           retention-days: 14
+
+      # ---- Gated Trivy: fail if HIGH/CRITICAL found (SARIF for Code Scanning)
+      - name: Trivy FS (SARIF, gated)
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          scanners: vuln,secret,misconfig,license
+
+      - name: Upload Trivy FS SARIF
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+      - name: Trivy Image (SARIF, gated)
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
+          format: sarif
+          output: trivy-image.sarif
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          scanners: vuln,secret,misconfig,license
+
+      - name: Upload Trivy Image SARIF
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
 
   # ---------------------------
   # ⏸️ MANUAL APPROVAL GATE
@@ -136,37 +185,72 @@ jobs:
     environment:
       name: prod-approval
     steps:
-      - run: echo "Pending manual approval for production deployment."
+      - run: echo "Pending manual approval in environment 'prod-approval'."
 
   # ---------------------------
-  # 3️⃣ DEPLOY TO GKE
+  # 3️⃣ DEPLOY
   # ---------------------------
   deploy:
-    name: Deploy to GKE
+    name: Deploy
     runs-on: ubuntu-latest
     needs: approval
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
+      - name: Google Cloud Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Setup gcloud SDK
+      - name: Install gcloud and GKE auth plugin
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
           install_components: 'gke-gcloud-auth-plugin'
           export_default_credentials: true
 
-      - name: Set GCP Project
+      - name: Enable GKE auth plugin
+        run: echo "USE_GKE_GCLOUD_AUTH_PLUGIN=True" >> $GITHUB_ENV
+
+      - name: Set GCP project
         run: gcloud config set project $PROJECT_ID
 
-      - name: Configure Docker for Artifact Registry
+      - name: Enable Required APIs
+        run: |
+          gcloud services enable artifactregistry.googleapis.com container.googleapis.com --project "$PROJECT_ID"
+      - name: Grant Artifact Registry pull to GKE node SA
+        id: grant-ar
+        shell: bash
+        run: |
+          set -euo pipefail
+          NODE_SA="$(gcloud container clusters describe "$CLUSTER_NAME" --region "$LOCATION" --format='value(nodeConfig.serviceAccount)')"
+          if [[ -z "${svc_acc}" || "${svc_acc}" == "null" ]]; then
+            PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+            NODE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+          fi
+          echo "NODE_SA=$NODE_SA" >> "$GITHUB_ENV"
+          gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+            --member="serviceAccount:${svc_acc}" \
+            --role="roles/artifactregistry.reader" \
+            --quiet
+          sleep 10
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          
+      - name: Configure Docker (Artifact Registry)
         run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
+      # Build again in this job (separate runner) to push the exact image we deploy
+      - name: Build Docker Image (release)
+        run: |
+          docker build -t "$IMAGE_REPO:$IMAGE_TAG" -t "$IMAGE_REPO:latest" -f DockerFile .
+      - name: Push Docker Image
+        run: |
+          docker push "$IMAGE_REPO:$IMAGE_TAG"
+          docker push "$IMAGE_REPO:latest"
       - name: Get GKE Credentials
         run: gcloud container clusters get-credentials "$CLUSTER_NAME" --region "$LOCATION" --project "$PROJECT_ID"
 
@@ -174,10 +258,19 @@ jobs:
         shell: bash
         run: |
           set -e
-          echo "Deploying image: $IMAGE_NAME"
-          sed -e "s|image: .*|image: $IMAGE_NAME|g" k8s-app-deployment.yaml | kubectl apply -f -
-          kubectl rollout status deployment/nginx-simple-app --timeout=5m
-
-      - name: Verify Deployment Image
+          echo "Using image: $IMAGE_NAME"
+          sed -e "s|image: .*gke-docker-repo/nginx-simple-app:.*|image: $IMAGE_NAME|g" k8s-app-deployment.yaml | kubectl apply -f -
+          if ! kubectl rollout status deployment/nginx-simple-app --timeout=5m; then
+            echo "Rollout failed — collecting diagnostics..."
+            kubectl get deploy/nginx-simple-app -o yaml || true
+            kubectl get rs -l app.kubernetes.io/name=nginx-simple-app -o wide || true
+            kubectl get pods -l app.kubernetes.io/name=nginx-simple-app -o wide || true
+            POD="$(kubectl get pods -l app.kubernetes.io/name=nginx-simple-app -o jsonpath='{.items[-1].metadata.name}')"
+            kubectl describe pod "$POD" || true
+            kubectl logs "$POD" --all-containers --tail=200 || true
+            kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
+            exit 1
+          fi
+      - name: Verify running image
         run: |
           kubectl get pods -l app.kubernetes.io/name=nginx-simple-app -o jsonpath='{.items[0].spec.containers[0].image}{"\n"}'
