@@ -68,3 +68,10 @@ variable "db_password" {
   sensitive   = true
 }
 
+variable "provision_secondary" {
+  description = "Set to true during failover to create secondary (cold) cluster and DB replica"
+  type        = bool
+  default     = false
+}
+
+
