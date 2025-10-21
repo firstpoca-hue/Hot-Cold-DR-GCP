@@ -243,7 +243,7 @@ jobs:
           sleep 10
 
       - name: Configure Docker (Artifact Registry)
-        run: gcloud auth configure-docker us-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
       # Build again in this job (separate runner) to push the exact image we deploy
       - name: Build Docker Image (release)
