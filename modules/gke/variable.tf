@@ -29,14 +29,6 @@ variable "subnetwork" {
   description = "The subnetwork for the GKE cluster."
   type        = string
 }
-
-# Flag to control if this cluster should be created (true/false)
-variable "enable" {
-  description = "If false, this cluster won't be created."
-  type        = bool
-  default     = true
-}
-
 # Optional machine type override
 variable "node_machine_type" {
   description = "Machine type for the GKE node pool."
