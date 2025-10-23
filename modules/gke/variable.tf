@@ -50,3 +50,10 @@ variable "node_count" {
   type        = number
   default     = 2
 }
+
+variable "enable" {
+  description = "Flag to enable or disable GKE cluster creation"
+  type        = bool
+  default     = true
+}
+
