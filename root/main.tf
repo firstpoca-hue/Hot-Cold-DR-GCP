@@ -35,6 +35,7 @@ resource "google_artifact_registry_repository" "repo" {
 # ==========================================================
 # 3) Primary (HOT) GKE Cluster
 # ==========================================================
+# Hot (Primary) GKE Cluster — Always created
 module "gke_hot" {
   source     = "../modules/gke"
   project_id = var.project_id
@@ -43,7 +44,8 @@ module "gke_hot" {
   cluster_name = var.cluster_name_primary
   network      = module.network.vpc_self_link
   subnetwork   = module.network.subnet_primary_self_link
-  enable       = true
+
+  enable = true
 }
 
 # ==========================================================
@@ -58,12 +60,10 @@ module "gke_cold" {
   network      = module.network.vpc_self_link
   subnetwork   = module.network.subnet_secondary_self_link
 
-  # This ensures cold cluster is only created when you enable it
-  enable       = var.provision_secondary
+  enable = var.provision_secondary
 
-  count        = var.provision_secondary ? 1 : 0
+  count = var.provision_secondary ? 1 : 0
 }
-
 # ==========================================================
 # 5) Cloud SQL (Primary + Replica)
 # ==========================================================
